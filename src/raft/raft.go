@@ -284,7 +284,7 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 	reply.FollowerTerm = rf.currentTerm
 	reply.Success = true
 	//fmt.Printf("\n  %d receive heartbeat at leader's term %d, and my term is %d", rf.me, args.LeaderTerm, rf.currentTerm)
-	// 旧任期的leader抛弃掉
+	// 旧任期的leader抛弃掉,
 	if args.LeaderTerm < rf.currentTerm {
 		reply.Success = false
 		return
