@@ -1,7 +1,7 @@
 package shardkv
 
-import "6.5840/shardctrler"
-import "6.5840/labrpc"
+import "MIT6.824-6.5840/shardctrler"
+import "MIT6.824-6.5840/labrpc"
 import "testing"
 import "os"
 
@@ -12,7 +12,7 @@ import "math/rand"
 import "encoding/base64"
 import "sync"
 import "runtime"
-import "6.5840/raft"
+import "MIT6.824-6.5840/raft"
 import "strconv"
 import "fmt"
 import "time"

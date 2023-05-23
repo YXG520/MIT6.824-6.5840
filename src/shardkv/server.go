@@ -1,9 +1,9 @@
 package shardkv
 
-import "6.5840/labrpc"
-import "6.5840/raft"
+import "MIT6.824-6.5840/labrpc"
+import "MIT6.824-6.5840/raft"
 import "sync"
-import "6.5840/labgob"
+import "MIT6.824-6.5840/labgob"
 
 type Op struct {
 	// Your definitions here.

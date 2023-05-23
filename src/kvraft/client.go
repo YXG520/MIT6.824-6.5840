@@ -1,6 +1,6 @@
 package kvraft
 
-import "6.5840/labrpc"
+import "MIT6.824-6.5840/labrpc"
 import "crypto/rand"
 import "math/big"
 

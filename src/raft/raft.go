@@ -25,7 +25,7 @@ import (
 )
 import "sync/atomic"
 
-import "6.5840/labrpc"
+import "MIT6.824-6.5840/labrpc"
 
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
