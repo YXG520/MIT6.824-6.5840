@@ -331,9 +331,9 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 
 func (cfg *config) checkTimeout() {
 	// enforce a two minute real-time limit on each test
-	//if !cfg.t.Failed() && time.Since(cfg.start) > 120*time.Second {
-	//	cfg.t.Fatal("test took longer than 120 seconds")
-	//}
+	if !cfg.t.Failed() && time.Since(cfg.start) > 120*time.Second {
+		cfg.t.Fatal("test took longer than 120 seconds")
+	}
 }
 
 func (cfg *config) checkFinished() bool {
@@ -345,6 +345,7 @@ func (cfg *config) cleanup() {
 	atomic.StoreInt32(&cfg.finished, 1)
 	for i := 0; i < len(cfg.rafts); i++ {
 		if cfg.rafts[i] != nil {
+			DPrintf(100, "cleanup, ready to call kill of rf...")
 			cfg.rafts[i].Kill()
 		}
 	}
@@ -485,19 +486,24 @@ func (cfg *config) checkNoLeader() {
 }
 
 // how many servers think a log entry is committed?
+// 输入为提交项的索引，从1开始
 func (cfg *config) nCommitted(index int) (int, interface{}) {
 	count := 0
-	var cmd interface{} = nil
+	var cmd interface{} = nil // 一个用来记录在index上各个实例存储的相同的日志项
+	// 遍历raft实例
 	for i := 0; i < len(cfg.rafts); i++ {
-		if cfg.applyErr[i] != "" {
+		if cfg.applyErr[i] != "" { // cfg.applyErr数组负责存储 ”捕捉错误的协程“ 收集到的错误，如果不空，则说明捕捉到异常
 			cfg.t.Fatal(cfg.applyErr[i])
 		}
 
 		cfg.mu.Lock()
+		// logs[i][index]负责存储检测线程提取到的每一个raft节点所有的提交项，i是实例id，index是测试程序生成的日志项，
+		// 如果某一个日志项在所有节点上的index位置上都被提交了，则有logs[i][0]==logs[i][1]==logs[i][2]=...==logs[i][n]
 		cmd1, ok := cfg.logs[i][index]
 		cfg.mu.Unlock()
-
 		if ok {
+			// 相反如果在index这个位置上有一个实例填充了数据（视为提交）但是不与其他实例相同，则会发生不匹配的现象，抛异常
+			// 如果某一个实例没有在这个位置上填充数据（等同没有提交），则cfg.logs[i][index]的ok为false，此时虽然也不匹配但是不会抛异常
 			if count > 0 && cmd != cmd1 {
 				cfg.t.Fatalf("committed values do not match: index %v, %v, %v",
 					index, cmd, cmd1)
@@ -506,7 +512,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 			cmd = cmd1
 		}
 	}
-	return count, cmd
+	return count, cmd // 返回有多少个节点认为第index数据已经提交，以及提交的日志项
 }
 
 // wait for at least n servers to commit.
@@ -555,6 +561,8 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
 func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 	t0 := time.Now()
 	starts := 0
+	// 10s内每隔50ms如果cfg节点没有挂掉（cfg.checkFinished==false）就持续检测 直到找到一个成为leader的节点，
+	// 然后取到start函数生成的日志项在这个leader中日志数组的位置index，然后再利用这个index去确认有多少从节点也复制并且提交了这个日志项
 	for time.Since(t0).Seconds() < 10 && cfg.checkFinished() == false {
 		// try all the servers, maybe one is the leader.
 		index := -1
@@ -567,6 +575,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			}
 			cfg.mu.Unlock()
 			if rf != nil {
+				//rf的start函数，会返回该日志项在leader节点中的日志数组的索引位置，任期以及是否是leader，如果找到了leader则break
 				index1, _, ok := rf.Start(cmd)
 				if ok {
 					index = index1
@@ -574,30 +583,40 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				}
 			}
 		}
-
+		// index不等于-1则表示找到了一个存储了cmd日志项的leader节点
 		if index != -1 {
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.
 			t1 := time.Now()
+			// 下面这个循环的意思是每隔20ms就轮询一次已经提交内容为cmd的日志项的节点数量是否大于等于expectedServers
+			// 为什么是2s内呢？因为正常情况下2s内一定能确认所有的节点都能够提交成功
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
+				DPrintf(500, "cnt that servers has commited the cmd %v:%d with the input cmd %v\n", cmd1, nd, cmd)
+				// 如果是则比较在这个索引位置上各节点提交的日志是否和给定的日志相同，如果相同直接返回索引
 				if nd > 0 && nd >= expectedServers {
 					// committed
 					if cmd1 == cmd {
+						// 返回index是为了确认各个节点提交的索引位置是否和start生成的顺序是否一致
 						// and it was the command we submitted.
 						return index
 					}
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
+			// 如果不是则看是否重试，不允许重试就抛异常
 			if retry == false {
+				fmt.Printf("return1------")
+
 				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 			}
 		} else {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
+	fmt.Printf("return2---------")
 	if cfg.checkFinished() == false {
+		// 如果在
 		cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 	}
 	return -1

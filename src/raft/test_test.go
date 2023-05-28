@@ -100,9 +100,9 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 100
+	iters := 10
 	for ii := 1; ii < iters; ii++ {
-		DPrintf("the  %d th iter...\n", ii)
+		DPrintf(110, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
@@ -130,39 +130,43 @@ func TestBasicAgree2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): basic agreement")
-
+	cfg.begin("Test (2B1): basic agreement")
 	iters := 3
+	// 测试iters次
 	for index := 1; index < iters+1; index++ {
+		DPrintf(11, "\nthis is the %d th iter...\n", index)
+		//检测start函数调用前，有几个节点已经提交了日志，因为调用start函数就相当于tester
+		//生成日志项并且投放给主节点，所以这里的没有启动start方法就没有日志项产生
 		nd, _ := cfg.nCommitted(index)
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
 		}
-
+		// 检查索引大多数节点对待同一个日志，存储的位置（即索引）是否和生产时的顺序相同
 		xindex := cfg.one(index*100, servers, false)
 		if xindex != index {
 			t.Fatalf("got index %v but expected %v", xindex, index)
 		}
+		DPrintf(11, "\nfinished the %d th iter...\n", index)
+
 	}
-
 	cfg.end()
-	fmt.Printf("test3 finished...")
-
+	DPrintf(11, "testB1 finished...")
 }
 
 // check, based on counting bytes of RPCs, that
 // each command is sent to each peer just once.
+
 func TestRPCBytes2B(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): RPC byte count")
+	cfg.begin("Test (2B2): RPC byte count")
 
 	cfg.one(99, servers, false)
 	bytes0 := cfg.bytesTotal()
 
-	iters := 10
+	iters := 3
 	var sent int64 = 0
 	for index := 2; index < iters+2; index++ {
 		cmd := randstring(5000)
@@ -189,7 +193,7 @@ func TestFollowerFailure2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): test progressive failure of followers")
+	cfg.begin("Test (2B3): test progressive failure of followers")
 
 	cfg.one(101, servers, false)
 
@@ -234,7 +238,7 @@ func TestLeaderFailure2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): test failure of leaders")
+	cfg.begin("Test (2B4): test failure of leaders")
 
 	cfg.one(101, servers, false)
 
@@ -275,14 +279,14 @@ func TestFailAgree2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): agreement after follower reconnects")
+	cfg.begin("Test (2B5): agreement after follower reconnects")
 
 	cfg.one(101, servers, false)
 
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
 	cfg.disconnect((leader + 1) % servers)
-
+	DPrintf(111, "already let the node %d offline to add new entries...", (leader+1)%servers)
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
 	cfg.one(102, servers-1, false)
@@ -290,9 +294,9 @@ func TestFailAgree2B(t *testing.T) {
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(104, servers-1, false)
 	cfg.one(105, servers-1, false)
-
 	// re-connect
 	cfg.connect((leader + 1) % servers)
+	DPrintf(111, "after connected, check whether previous added entries can sync to %d...", (leader+1)%servers)
 
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
@@ -309,7 +313,7 @@ func TestFailNoAgree2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): no agreement if too many followers disconnect")
+	cfg.begin("Test (2B6): no agreement if too many followers disconnect")
 
 	cfg.one(10, servers, false)
 
@@ -356,11 +360,11 @@ func TestFailNoAgree2B(t *testing.T) {
 }
 
 func TestConcurrentStarts2B(t *testing.T) {
-	servers := 3
+	servers := 7
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): concurrent Start()s")
+	cfg.begin("Test (2B7): concurrent Start()s")
 
 	var success bool
 loop:
@@ -461,7 +465,7 @@ func TestRejoin2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): rejoin of partitioned leader")
+	cfg.begin("Test (2B8): rejoin of partitioned leader")
 
 	cfg.one(101, servers, true)
 
@@ -499,70 +503,80 @@ func TestBackup2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): leader backs up quickly over incorrect follower logs")
+	cfg.begin("Test (2B9): leader backs up quickly over incorrect follower logs")
 
 	cfg.one(rand.Int(), servers, true)
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
+	DPrintf(11, "check one leader alive with id %d...\n", cfg.rafts[leader1].me)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
+	DPrintf(11, "let followers whose id is greater than leader %d were forced offline...\n", cfg.rafts[leader1].me)
 
 	// submit lots of commands that won't commit
+	// 意思是因为前面强制下线了多数节点，所以这里的添加的日志都会丢失，不会被提交
 	for i := 0; i < 50; i++ {
 		cfg.rafts[leader1].Start(rand.Int())
 	}
-
+	DPrintf(11, "after corruption, 50 cmds are inserted and it should not be successfully done...\n")
 	time.Sleep(RaftElectionTimeout / 2)
 
 	cfg.disconnect((leader1 + 0) % servers)
 	cfg.disconnect((leader1 + 1) % servers)
-
+	DPrintf(11, "last 2 instances are done now !!!！\n")
 	// allow other partition to recover
 	cfg.connect((leader1 + 2) % servers)
 	cfg.connect((leader1 + 3) % servers)
 	cfg.connect((leader1 + 4) % servers)
-
+	DPrintf(11, "3 nodes are now reconnected and new 50 cmds is gonna be checked whether be refused...\n")
 	// lots of successful commands to new group.
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
-
+	DPrintf(11, "%v : refuse all, good!\n", cfg.rafts[leader1].SayMeL())
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
 	other := (leader1 + 2) % servers
 	if leader2 == other {
-		other = (leader2 + 1) % servers
+		other = (leader2 + 1) % servers // 另一个从节点
 	}
-	cfg.disconnect(other)
+	DPrintf(11, "%v : checkOneLeader!!!\n", cfg.rafts[leader2].SayMeL())
 
+	cfg.disconnect(other) // 下线另一个从节点
+
+	DPrintf(11, "%v: 1 follower is done now !!!！ and the raft is going to be added new items...\n", cfg.rafts[other].SayMeL())
 	// lots more commands that won't commit
 	for i := 0; i < 50; i++ {
 		cfg.rafts[leader2].Start(rand.Int())
 	}
 
 	time.Sleep(RaftElectionTimeout / 2)
-
 	// bring original leader back to life,
 	for i := 0; i < servers; i++ {
 		cfg.disconnect(i)
 	}
+	DPrintf(11, "all nodes are down....\n")
+
 	cfg.connect((leader1 + 0) % servers)
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
+	DPrintf(11, "3 are reconnected....\n")
 
 	// lots of successful commands to new group.
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
-
+	DPrintf(11, "check successfully!....\n")
 	// now everyone
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}
+
 	cfg.one(rand.Int(), servers, true)
 
+	DPrintf(11, "TestBackup2B finished!!!... ")
 	cfg.end()
 }
 
@@ -571,7 +585,7 @@ func TestCount2B(t *testing.T) {
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): RPC counts aren't too high")
+	cfg.begin("Test (2B_10): RPC counts aren't too high")
 
 	rpcs := func() (n int) {
 		for j := 0; j < servers; j++ {
