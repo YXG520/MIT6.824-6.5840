@@ -520,7 +520,106 @@ PASS
 > 
 
 ## Q2 
-matchIndex,commitIndex和lastApplied是如何确保日志机制正常工作的?
+提交日志的流程及其说明
+1 主结点以及各个从节点的commitIndex是如何更新的？
+
+> 答：**首先可以确定是的主节点的commitIndex不依赖于各个从节点的commitIndex,
+而是依赖matchIndex但是从节点更新commitIndex时依赖主节更新的commitIndex.**
+主结点将AppendEntries rpc发给从节点，从节点收到后会更新日志，然后返回给leader节点成功同步，
+leader节点将从节点的prevLogIndex赋值给主结点中存储的属于该从节点的matchIndex，每次收到
+日志复制成功的响应，就尝试提交一次等于matchIndex的日志索引，主结点日志提交成功的条件就是集群中多数节点的
+这个matchIndex已经被提交，具体的判断逻辑可以参考tryCommitL方法实现。
+>
+> 至于从节点地commitIndex更新，在主结点发送AppendEntries RPC给自己时，如果成功添加或者覆盖了日志
+> 则一定要更新一次自己地commitIndex，如果主节点的commitIndex大于从节点的commitIndex，则取
+> min(LeaderCommit, rf.log.LastLogIndex)，因为在集群中可能存在从节点的日志复制速度还跟不
+> 上主结点的的日志提交速度，这里一定只有少数从节点跟不上主结点日志的提交速度(一致性容错原则决定
+> 最低有一半节点的matchIndex都大于等于x才有可能使得commitIndex=x的日志得以提交)
+>
+
+```go
+
+if args.LeaderCommit > rf.commitIndex {
+    if args.LeaderCommit < rf.log.LastLogIndex {
+        rf.commitIndex = args.LeaderCommit
+    } else {
+        rf.commitIndex = rf.log.LastLogIndex
+    }
+    rf.applyCond.Broadcast()
+}
+
+```
+
+
+2 为什么所有从节点的commitIndex要依赖于leader的commitIndex呢？
+>答：首先主从架构下，只有leader节点能接受写操作，leader模式写成功的条件是集群中大多数
+> 节点的matchIndex大于等于主结点的commitIndex,此时主结点可以认为在commitIndex这个
+> 索引上大多数节点的日志条目是一样的，但是如果集群中多数节点挂了，则无法获取到多数票，此时
+> commitIndex会提交失败，又因为从节点的commitIndex依赖于leader节点，所以所有的从节点
+> 此时不会提交各自的commitIndex，然后主结点就可以给客户端返回操作失败，这样也是保证了
+> 一致性的。
+>
+> 如果从节点的commitIndex不依赖于leader的commitIndex，则发生故障时，
+> 主节点的commitIndex不能提交成功（因为多数节点故障，只有少数票不足以提交日志），但是
+> 未故障的从节点却可以提交commitIndex, 此时出现了主从不一致现象，因为从节点的
+> commitIndex一定小于等于主节点的commitIndex
+
+2 tryCommitL方法实现（有多少服务器认为日志条目已提交?）
+```go
+// 主节点进行提交，其条件是多余一半的从节点的commitIndex>=leader节点当前提交的commitIndex
+func (rf *Raft) tryCommitL(matchIndex int) {
+    if matchIndex <= rf.commitIndex {
+        // 首先matchIndex应该是大于leader节点的commitIndex才能提交，因为commitIndex及其之前的不需要更新
+        return
+    }
+    // 越界的也不能提交
+    if matchIndex > rf.log.LastLogIndex {
+        return
+    }
+    if matchIndex < rf.log.FirstLogIndex {
+        return
+    }
+    // 提交的必须本任期内从客户端收到的日志
+    if rf.getEntryTerm(matchIndex) != rf.currentTerm {
+        return
+    }
+
+    // 计算所有已经正确匹配该matchIndex的从节点的票数
+    cnt := 1 //自动计算上leader节点的一票
+    for i := 0; i < len(rf.peers); i++ {
+        if i == rf.me {
+            continue
+        }
+        // 为什么只需要保证提交的matchIndex必须小于等于其他节点的matchIndex就可以认为这个节点在这个matchIndex记录上正确匹配呢？
+        // 因为matchIndex是增量的，如果一个从节点的matchIndex=10，则表示该节点从1到9的子日志都和leader节点对上了
+        if matchIndex <= rf.peerTrackers[i].matchIndex {
+            cnt++
+        }
+    }
+    // 超过半数就提交
+    if cnt > len(rf.peers)/2 {
+        rf.commitIndex = matchIndex
+        if rf.commitIndex > rf.log.LastLogIndex {
+            DPrintf(999, "%v: commitIndex > lastlogindex %v > %v", rf.SayMeL(), rf.commitIndex, rf.log.LastLogIndex)
+            panic("")
+        }
+        DPrintf(199, "%v: rf.applyCond.Broadcast(),rf.lastApplied=%v rf.commitIndex=%v", rf.SayMeL(), rf.lastApplied, rf.commitIndex)
+        rf.applyCond.Broadcast() // 通知对应的applier协程将日志放到状态机上验证
+    } else {
+        DPrintf(199, "\n%v: 未超过半数节点在此索引上的日志相等，拒绝提交....\n", rf.SayMeL())
+    } 
+}
+```
+3 为什么需要matchIndex？
+
+> 答：首先我们需要知道matchIndex的含义是从节点和主结点的日志匹配索引，raft机制规定主结点提交一个commitIndex
+就表示在该commitIndex处及其之前的日志记录都已被提交，同时提交commitIndex的条件是集群内在这个索引下的
+多数节点（也包括leader节点）的日志都是相同的，如何知道一个从节点日志和主节点日志的匹配进度呢？答案就是使用
+matchIndex，leader节点存储了每一个从节点的matchIndex，所以每次当leader节点成功的同步了一部分日志到
+某一个从节点的时候就会开启一个协程去处理主结点的提交索引问题，可能刚开始的时候会失败，但是随着越来越多的从节点
+的matchIndex达到了最新的日志末尾，总有一次多数matchIndex大于等于commitIndex，此时可以提交。
+具体的流程可以参考2.
+
 
 ## Q3 
 问：leader发送给各个从节点的prevLogIndex的值等于nextIndex-1还是leader节点的lastLogIndex呢
@@ -581,9 +680,9 @@ cpu每隔50ms轮询一次心跳是否过期，如果过期就只发送心跳，�
 > 对于大于LastLogIndex的日志项，会执行append操作将日志项添加到自身的日志末尾。从节点随后会更新自己的commitIndex
 >
 > 如果从节点在索引PrevLogIndex上的日志的任期不等于args.PrevLogTerm，如果采用nextIndex递减算法，则响应参数
-> 跟(PrevLogIndex<FirstLogIndex || PrevLogIndex>rf.LastLogIndex)的情况是一样的（HandleAppendEntriesRPC
-> 和HandleAppendEntriesRPC 搭配使用实现）； 如果采用优化的nextIndex跳跃算法，可以参考（HandleAppendEntriesRPC2
-> 和HandleAppendEntriesRPC2的搭配）
+> 跟(PrevLogIndex<FirstLogIndex || PrevLogIndex>rf.LastLogIndex)的情况是一样的（HandleAppendEntriesRPC2
+> 和HandleAppendEntriesRPC2 搭配使用实现）； 如果采用优化的nextIndex跳跃算法，可以参考（HandleAppendEntriesRPC
+> 和HandleAppendEntriesRPC的搭配）这两种算法的复现过程可以看Q8
 >
 > 从一个leader节点来看：
 >
@@ -753,104 +852,110 @@ follow it
 所以会从索引8开始直到10的槽位才会被新leader的8到10的日志项覆盖。
 
 
+## Q8：raft论文中介绍了两种确定nextIndex的rcp调用和响应算法，如何分别实现它们
 
+1 论文中提到的是收敛速度较慢的算法，具体的核心思想如下：
 
-## 提交日志的流程及其说明
-1 主结点以及各个从节点的commitIndex是如何更新的？
-
-> 答：**首先可以确定是的主节点的commitIndex不依赖于各个从节点的commitIndex,
-而是依赖matchIndex但是从节点更新commitIndex时依赖主节更新的commitIndex.**
-主结点将AppendEntries rpc发给从节点，从节点收到后会更新日志，然后返回给leader节点成功同步，
-leader节点将从节点的prevLogIndex赋值给主结点中存储的属于该从节点的matchIndex，每次收到
-日志复制成功的响应，就尝试提交一次等于matchIndex的日志索引，主结点日志提交成功的条件就是集群中多数节点的
-这个matchIndex已经被提交，具体的判断逻辑可以参考tryCommitL方法实现。
+> The leader maintains a nextIndex for each follower,
+which is the index of the next log entry the leader will
+send to that follower. When a leader first comes to power,
+it initializes all nextIndex values to the index just after the
+last one in its log (11 in Figure 7). If a follower’s log is
+inconsistent with the leader’s, the AppendEntries consistency 
+check will fail in the next AppendEntries RPC. 
+after a rejection, the leader decrements nextIndex and retries
+the AppendEntries RPC. Eventually nextIndex will reach
+a point where the leader and follower logs match. When
+this happens, AppendEntries will succeed, which removes
+any conflicting entries in the follower’s log and appends
+entries from the leader’s log (if any). Once AppendEntries
+succeeds, the follower’s log is consistent with the leader’s,
+and it will remain that way for the rest of the term.
 > 
-> 至于从节点地commitIndex更新，在主结点发送AppendEntries RPC给自己时，如果成功添加或者覆盖了日志
-> 则一定要更新一次自己地commitIndex，如果主节点的commitIndex大于从节点的commitIndex，则取
-> min(LeaderCommit, rf.log.LastLogIndex)，因为在集群中可能存在从节点的日志复制速度还跟不
-> 上主结点的的日志提交速度，这里一定只有少数从节点跟不上主结点日志的提交速度(一致性容错原则决定
-> 最低有一半节点的matchIndex都大于等于x才有可能使得commitIndex=x的日志得以提交)
+> 翻译：当一个节点刚成为leader时，它会初始化所有的nextIndex为lastLogIndex+1，
+> 如果从节点的日志与leader节点的日志不一致, appendEntries rpc发到从节点后，
+> 一致性检查会失败，所以会拒绝这个rpc，主结点收到会将nextIndex减去1然后再重新
+> 向这个从节点发送appendEntries rpc，如果还拒绝再自减1再重试直到达到一个
+> 主结点和该从节点的日志是一致的位置
+HandleAppendEntriesRPC2和AppendEntries2这种方法的复现
+
+测试结果： 测了两次，平均时间51s
+```go
+Test (2B1): basic agreement ...
+... Passed --   0.8  3   20    6234    3
+Test (2B2): RPC byte count ...
+... Passed --   0.8  3   26   37940    4
+Test (2B3): test progressive failure of followers ...
+... Passed --   4.8  3  174   41709    3
+Test (2B4): test failure of leaders ...
+... Passed --   5.2  3  298   70101    3
+Test (2B5): agreement after follower reconnects ...
+... Passed --   5.7  3  192   57873    8
+Test (2B6): no agreement if too many followers disconnect ...
+... Passed --   3.7  5  276   67624    3
+Test (2B7): concurrent Start()s ...
+... Passed --   0.5  7   54   17521    6
+Test (2B8): rejoin of partitioned leader ...
+... Passed --   6.5  3  295   78061    4
+Test (2B9): leader backs up quickly over incorrect follower logs ...
+... Passed --  21.7  5 3360 2310784  105
+Test (2B_10): RPC counts aren't too high ...
+... Passed --   2.0  3   82   27825   12
+PASS
+ok      MIT6.824-6.5840/raft    52.400s
+
+```
+2 优化算法：
+> If desired, the protocol can be optimized to reduce the
+number of rejected AppendEntries RPCs. For example,
+when rejecting an AppendEntries request, the follower
+can include the term of the conflicting entry and the first
+index it stores for that term. With this information, the
+leader can decrement nextIndex to bypass all of the con-
+flicting entries in that term; one AppendEntries RPC will
+be required for each term with conflicting entries, rather
+than one RPC per entry. In practice, we doubt this optimization 
+> is necessary, since failures happen infrequently
+and it is unlikely that there will be many inconsistent entries.
+> 
 >
+> 翻译：起初时发送端的参数不变，但是在从节点发现不一致的时候，也会返回一个PrevLogIndex
+> 和一个PrevLogTerm参数，这里的PrevLogIndex是从节点发生冲突的日志项所属的任期内的第一个
+> 索引，而PrevLogTerm参数则是该索引对应的任期，这样主节点收到这种反馈后，nextIndex会直接
+> 跳到这个任期的第一个索引，也就是说AppendEntries发送频率由每一次冲突日志的任期内需要一次rpc
+> 调用，而不是每一个冲突的日志项会发生一次rpc调用。 主结点收到响应后也会往前跳跃一个任期，这样
+> nextIndex的收敛速度进一步加快。可以参考HandleAppendEntriesRPC和AppendEntries
+> 这种方法的复现
 
+
+测试结果：两次平均44s，已经是巨大的进步了
 ```go
-
-if args.LeaderCommit > rf.commitIndex {
-    if args.LeaderCommit < rf.log.LastLogIndex {
-        rf.commitIndex = args.LeaderCommit
-    } else {
-        rf.commitIndex = rf.log.LastLogIndex
-    }
-    rf.applyCond.Broadcast()
-}
-
+Test (2B1): basic agreement ...
+  ... Passed --   0.8  3   20    6234    3
+Test (2B2): RPC byte count ...
+  ... Passed --   0.8  3   26   37940    4
+Test (2B3): test progressive failure of followers ...
+Test (2B3): test progressive failure of followers ...
+  ... Passed --   4.8  3  174   41709    3
+  ... Passed --   0.7  3   20    6234    3
+Test (2B2): RPC byte count ...
+  ... Passed --   0.8  3   26   37904    4
+Test (2B3): test progressive failure of followers ...
+  ... Passed --   4.7  3  176   42439    3
+Test (2B4): test failure of leaders ...
+  ... Passed --   5.3  3  304   72175    3
+Test (2B5): agreement after follower reconnects ...
+  ... Passed --   5.4  3  182   55043    8
+Test (2B6): no agreement if too many followers disconnect ...
+  ... Passed --   3.7  5  288   70904    3
+Test (2B7): concurrent Start()s ...
+  ... Passed --   0.5  7   60   18263    6
+Test (2B8): rejoin of partitioned leader ...
+  ... Passed --   4.4  3  240   60412    4
+Test (2B9): leader backs up quickly over incorrect follower logs ...
+  ... Passed --  16.0  5 2740 1898720  102
+Test (2B_10): RPC counts aren't too high ...
+  ... Passed --   2.1  3   82   28324   12
+PASS
+ok      MIT6.824-6.5840/raft    44.074s
 ```
-
-
-2 为什么所有从节点的commitIndex要依赖于leader的commitIndex呢？
->答：首先主从架构下，只有leader节点能接受写操作，leader模式写成功的条件是集群中大多数
-> 节点的matchIndex大于等于主结点的commitIndex,此时主结点可以认为在commitIndex这个
-> 索引上大多数节点的日志条目是一样的，但是如果集群中多数节点挂了，则无法获取到多数票，此时
-> commitIndex会提交失败，又因为从节点的commitIndex依赖于leader节点，所以所有的从节点
-> 此时不会提交各自的commitIndex，然后主结点就可以给客户端返回操作失败，这样也是保证了
-> 一致性的。
-> 
-> 如果从节点的commitIndex不依赖于leader的commitIndex，则发生故障时，
-> 主节点的commitIndex不能提交成功（因为多数节点故障，只有少数票不足以提交日志），但是
-> 未故障的从节点却可以提交commitIndex, 此时出现了主从不一致现象，因为从节点的
-> commitIndex一定小于等于主节点的commitIndex
-
-2 tryCommitL方法实现（有多少服务器认为日志条目已提交?）
-```go
-// 主节点进行提交，其条件是多余一半的从节点的commitIndex>=leader节点当前提交的commitIndex
-func (rf *Raft) tryCommitL(matchIndex int) {
-    if matchIndex <= rf.commitIndex {
-        // 首先matchIndex应该是大于leader节点的commitIndex才能提交，因为commitIndex及其之前的不需要更新
-        return
-    }
-    // 越界的也不能提交
-    if matchIndex > rf.log.LastLogIndex {
-        return
-    }
-    if matchIndex < rf.log.FirstLogIndex {
-        return
-    }
-    // 提交的必须本任期内从客户端收到的日志
-    if rf.getEntryTerm(matchIndex) != rf.currentTerm {
-        return
-    }
-
-    // 计算所有已经正确匹配该matchIndex的从节点的票数
-    cnt := 1 //自动计算上leader节点的一票
-    for i := 0; i < len(rf.peers); i++ {
-        if i == rf.me {
-            continue
-        }
-        // 为什么只需要保证提交的matchIndex必须小于等于其他节点的matchIndex就可以认为这个节点在这个matchIndex记录上正确匹配呢？
-        // 因为matchIndex是增量的，如果一个从节点的matchIndex=10，则表示该节点从1到9的子日志都和leader节点对上了
-        if matchIndex <= rf.peerTrackers[i].matchIndex {
-            cnt++
-        }
-    }
-    // 超过半数就提交
-    if cnt > len(rf.peers)/2 {
-        rf.commitIndex = matchIndex
-        if rf.commitIndex > rf.log.LastLogIndex {
-            DPrintf(999, "%v: commitIndex > lastlogindex %v > %v", rf.SayMeL(), rf.commitIndex, rf.log.LastLogIndex)
-            panic("")
-        }
-        DPrintf(199, "%v: rf.applyCond.Broadcast(),rf.lastApplied=%v rf.commitIndex=%v", rf.SayMeL(), rf.lastApplied, rf.commitIndex)
-        rf.applyCond.Broadcast() // 通知对应的applier协程将日志放到状态机上验证
-    } else {
-        DPrintf(199, "\n%v: 未超过半数节点在此索引上的日志相等，拒绝提交....\n", rf.SayMeL())
-    } 
-}
-```
-3 为什么需要matchIndex？
-
-> 答：首先我们需要知道matchIndex的含义是从节点和主结点的日志匹配索引，raft机制规定主结点提交一个commitIndex
-就表示在该commitIndex处及其之前的日志记录都已被提交，同时提交commitIndex的条件是集群内在这个索引下的
-多数节点（也包括leader节点）的日志都是相同的，如何知道一个从节点日志和主节点日志的匹配进度呢？答案就是使用
-matchIndex，leader节点存储了每一个从节点的matchIndex，所以每次当leader节点成功的同步了一部分日志到
-某一个从节点的时候就会开启一个协程去处理主结点的提交索引问题，可能刚开始的时候会失败，但是随着越来越多的从节点
-的matchIndex达到了最新的日志末尾，总有一次多数matchIndex大于等于commitIndex，此时可以提交。
-具体的流程可以参考2.

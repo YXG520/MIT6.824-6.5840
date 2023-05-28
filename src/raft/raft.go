@@ -311,7 +311,7 @@ func (rf *Raft) StartAppendEntries(heart bool) {
 }
 
 // nextIndex常规收敛方法，经 go test -run 2B测试速度比优化后的算法慢5-10ss
-func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
+func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 	if rf.state != Leader {
 		return
 	}
@@ -372,7 +372,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 }
 
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
-func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
+func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	if rf.state != Leader {
 		return
 	}
@@ -432,15 +432,13 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 			//go rf.InstallSnapshot(serverId)
 			return
 		}
-		//if reply.PrevLogIndex+1 < rf.log.FirstLogIndex {
-		//	DPrintf(1111, "%v: the reply.PrevLogIndex is %d", rf.SayMeL(), reply.PrevLogIndex)
-		//	return
-		//} else
-		//
-		//if reply.PrevLogIndex > rf.log.FirstLogIndex {
-		//	rf.peerTrackers[targetServerId].nextIndex = rf.log.LastLogIndex + 1
-		//} else
-		if rf.getEntryTerm(reply.PrevLogIndex) == reply.PrevLogTerm {
+		if reply.PrevLogIndex+1 < rf.log.FirstLogIndex {
+			return
+		}
+
+		if reply.PrevLogIndex > rf.log.LastLogIndex {
+			rf.peerTrackers[targetServerId].nextIndex = rf.log.LastLogIndex + 1
+		} else if rf.getEntryTerm(reply.PrevLogIndex) == reply.PrevLogTerm {
 			// 因为响应方面接收方做了优化，作为响应方的从节点可以直接跳到索引不匹配但是等于任期PrevLogTerm的第一个提交的日志记录
 			rf.peerTrackers[targetServerId].nextIndex = reply.PrevLogIndex + 1
 		} else {

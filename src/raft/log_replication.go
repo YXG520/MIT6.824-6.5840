@@ -14,7 +14,7 @@ func (rf *Raft) resetHeartbeatTimer() {
 
 // 方法一：定义一个心跳兼日志同步处理器，这个方法是Candidate和Follower节点的处理
 // nextIndex递减算法
-func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
+func (rf *Raft) HandleAppendEntriesRPC2(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
 	rf.mu.Lock() // 加接收日志方的锁
 	defer rf.mu.Unlock()
 	reply.FollowerTerm = rf.currentTerm
@@ -72,7 +72,7 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 
 // nextIndex收敛速度优化：nextIndex跳跃算法
 // 定义一个心跳兼日志同步处理器，这个方法是Candidate和Follower节点的处理
-func (rf *Raft) HandleAppendEntriesRPC2(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
+func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
 	rf.mu.Lock() // 加接收日志方的锁
 	defer rf.mu.Unlock()
 	reply.FollowerTerm = rf.currentTerm
@@ -129,13 +129,15 @@ func (rf *Raft) HandleAppendEntriesRPC2(args *RequestAppendEntriesArgs, reply *R
 		for prevIndex >= rf.log.FirstLogIndex && rf.getEntryTerm(prevIndex) == rf.log.getOneEntry(args.PrevLogIndex).Term {
 			prevIndex--
 		}
+		//prevIndex++ // 当前任期提交的第一个日志
 		reply.FollowerTerm = rf.currentTerm
 		reply.Success = false
 		if prevIndex >= rf.log.FirstLogIndex {
 			reply.PrevLogIndex = prevIndex
 			reply.PrevLogTerm = rf.getEntryTerm(prevIndex)
+			DPrintf(111, "%v: stepping over the index of currentTerm to the last log entry of last term", rf.SayMeL())
+
 		}
-		DPrintf(111, "computing the follower's PrevLogIndex and PrevLogTerm...")
 
 	}
 
