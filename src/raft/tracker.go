@@ -21,7 +21,7 @@ func (rf *Raft) resetTrackedIndex() {
 			rf.peerTrackers[i].nextIndex = rf.log.LastLogIndex + 1 // 成为了leader，默认nextIndex都是从rf.log.LastLogIndex + 1开始
 			rf.peerTrackers[i].matchIndex = 0                      //成为leader时，将其nextIndex和matchIndex置为
 
-			DPrintf(50, "实例 %d 的nextIndex被更新为: %d...", rf.me, rf.peerTrackers[i].nextIndex)
+			DPrintf(50, "实例 %d 更新实例%d的nextIndex为: %d...", rf.me, i, rf.peerTrackers[i].nextIndex)
 
 		}
 	}

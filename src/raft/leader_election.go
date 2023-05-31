@@ -25,6 +25,7 @@ func (rf *Raft) StartElection() {
 	args.CandidateId = rf.me
 	args.LastLogIndex = rf.log.LastLogIndex
 	args.LastLogTerm = rf.getLastEntryTerm()
+	defer rf.persist()
 	for i, _ := range rf.peers {
 		if rf.me == i {
 			continue
@@ -71,7 +72,6 @@ func (rf *Raft) resetElectionTimer() {
 }
 
 func (rf *Raft) becomeCandidate() {
-	//defer rf.persist()
 	rf.state = Candidate
 	rf.currentTerm++
 	//rf.votedMe = make([]bool, len(rf.peers))
@@ -120,6 +120,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
+		rf.persist()
 		return
 	}
 	if args.Term > rf.currentTerm {
@@ -142,7 +143,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.state = Follower
 		rf.resetElectionTimer() //自己的票已经投出时就转为follower状态
 		DPrintf(111, "%v: 投出同意票给节点%d", rf.SayMeL(), args.CandidateId)
-
+		rf.persist()
 	} else {
 		reply.VoteGranted = false
 		DPrintf(111, "%v: 投出反对票给节点%d", rf.SayMeL(), args.CandidateId)

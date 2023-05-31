@@ -698,19 +698,22 @@ func TestPersist12C(t *testing.T) {
 	cfg.begin("Test (2C): basic persistence")
 
 	cfg.one(11, servers, true)
-
+	DPrintf(111, "crash and re-start all nodes...")
 	// crash and re-start all
 	for i := 0; i < servers; i++ {
 		cfg.start1(i, cfg.applier)
 	}
+	DPrintf(111, "attempting to reconnect every node...")
 	for i := 0; i < servers; i++ {
 		cfg.disconnect(i)
 		cfg.connect(i)
 	}
 
 	cfg.one(12, servers, true)
-
+	DPrintf(111, "check again...")
 	leader1 := cfg.checkOneLeader()
+	DPrintf(111, "check if leader exists...")
+
 	cfg.disconnect(leader1)
 	cfg.start1(leader1, cfg.applier)
 	cfg.connect(leader1)

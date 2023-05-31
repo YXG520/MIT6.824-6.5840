@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"MIT6.824-6.5840/labgob"
+	"bytes"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -151,33 +153,36 @@ func (rf *Raft) GetState() (int, bool) {
 // see paper's Figure 2 for a description of what should be persistent.
 func (rf *Raft) persist() {
 	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm) // 持久化任期
+	e.Encode(rf.votedFor)    // 持久化votedFor
+	e.Encode(rf.log)         // 持久化日志
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
+	DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
 }
 
 // restore previously persisted state.
-func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
+func (rf *Raft) readPersist() {
+	stateData := rf.persister.ReadRaftState()
+	if stateData == nil || len(stateData) < 1 { // bootstrap without any state?
 		return
 	}
 	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	if stateData != nil && len(stateData) > 0 { // bootstrap without any state?
+		r := bytes.NewBuffer(stateData)
+		d := labgob.NewDecoder(r)
+		rf.votedFor = 0 // in case labgob waring
+		if d.Decode(&rf.currentTerm) != nil ||
+			d.Decode(&rf.votedFor) != nil ||
+			d.Decode(&rf.log) != nil {
+			//   error...
+			DPrintf(999, "%v: readPersist decode error\n", rf.SayMeL())
+			panic("")
+		}
+
+	}
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -252,6 +257,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	DPrintf(100, "%v: a command index=%v cmd=%T %v come", rf.SayMeL(), index, command, command)
 	rf.log.appendL(Entry{term, command})
+	rf.persist()
 	//rf.resetTrackedIndex()
 	DPrintf(101, "%v: check the newly added log index：%d", rf.SayMeL(), rf.log.LastLogIndex)
 	go rf.StartAppendEntries(false)
@@ -415,6 +421,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		if reply.FollowerTerm > rf.currentTerm {
 			rf.state = Follower
 			rf.NewTermL(reply.FollowerTerm)
+			rf.persist()
 			return
 		}
 		DPrintf(111, "%v: get append reply reply.PrevLogIndex=%v reply.PrevLogTerm=%v reply.Success=%v heart=%v\n", rf.SayMeL(), reply.PrevLogIndex, reply.PrevLogTerm, reply.Success, heart)
@@ -512,9 +519,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.state = Follower //设置节点的初始状态为follower
 	rf.resetElectionTimer()
 	rf.heartbeatTimeout = heartbeatTimeout // 这个是固定的
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
 	rf.log = NewLog()
+	// initialize from state persisted before a crash
+	rf.readPersist()
 	rf.applyHelper = NewApplyHelper(applyCh, rf.lastApplied)
 	rf.commitIndex = 0
 	rf.lastApplied = 0
@@ -525,17 +532,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.ticker()
 	go rf.sendMsgToTester() // 供config协程追踪日志以测试
 
-	//testTimer := time.NewTimer(time.Millisecond * 100)
-	//go rf.alive(testTimer)
-	//go func() {
-	//	<-testTimer.C
-	//	if rf.killed() {
-	//		return
-	//	}
-	//	tmpInfo := fmt.Sprintf("%v: bomb", rf.SayMeL())
-	//	DPrintf(999, "%v ::::: alive", tmpInfo)
-	//	panic(tmpInfo)
-	//}()
 	return rf
 }
 
@@ -558,10 +554,7 @@ func (rf *Raft) ticker() {
 			} //#C
 
 		case Leader:
-			//if !rf.quorumActive() {
-			//	// 如果票数不够需要转变为follower
-			//	break
-			//}
+
 			// 只有Leader节点才能发送心跳和日志给从节点
 			isHeartbeat := false
 			// 检测是需要发送单纯的心跳还是发送日志
@@ -569,7 +562,6 @@ func (rf *Raft) ticker() {
 			if rf.pastHeartbeatTimeout() {
 				isHeartbeat = true
 				rf.resetHeartbeatTimer()
-				//rf.StartAppendEntries(isHeartbeat)
 			}
 			rf.StartAppendEntries(isHeartbeat)
 		}
@@ -589,15 +581,4 @@ func (rf *Raft) getLastEntryTerm() int {
 	//}
 	return -1
 
-}
-
-func (rf *Raft) alive(testTimer *time.Timer) {
-	for !rf.killed() {
-		rf.mu.Lock()
-		testTimer.Reset(time.Second * 2)
-		DPrintf(100, "%v: I am alive\n", rf.SayMeL())
-		rf.mu.Unlock()
-		time.Sleep(time.Second)
-	}
-	testTimer.Stop()
 }

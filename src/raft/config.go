@@ -118,6 +118,7 @@ func (cfg *config) crash1(i int) {
 	// but copy old persister's content so that we always
 	// pass Make() the last persisted state.
 	if cfg.saved[i] != nil {
+		// 持久化的时候会将对应节点的Persister持久化时保存的数据复制一份给新建的node
 		cfg.saved[i] = cfg.saved[i].Copy()
 	}
 
@@ -297,7 +298,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	// pass Make() the last persisted state.
 	if cfg.saved[i] != nil {
 		cfg.saved[i] = cfg.saved[i].Copy()
-
+		DPrintf(111, "now showing the persisted data: %v", cfg.saved[i].ReadRaftState())
 		snapshot := cfg.saved[i].ReadSnapshot()
 		if snapshot != nil && len(snapshot) > 0 {
 			// mimic KV server and process snapshot now.
@@ -606,7 +607,6 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			}
 			// 如果不是则看是否重试，不允许重试就抛异常
 			if retry == false {
-				fmt.Printf("return1------")
 
 				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 			}
@@ -614,7 +614,6 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	fmt.Printf("return2---------")
 	if cfg.checkFinished() == false {
 		// 如果在
 		cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)

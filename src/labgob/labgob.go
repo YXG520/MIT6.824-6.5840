@@ -7,7 +7,9 @@ package labgob
 // about non-capitalized field names.
 //
 
-import "encoding/gob"
+import (
+	"encoding/gob"
+)
 import "io"
 import "reflect"
 import "fmt"
@@ -53,6 +55,11 @@ func (dec *LabDecoder) Decode(e interface{}) error {
 	checkValue(e)
 	checkDefault(e)
 	return dec.gob.Decode(e)
+}
+func (dec *LabDecoder) DecodeWithPrint(id int, name string, e interface{}) error {
+	data := dec.Decode(e)
+	//fmt.Printf("\n %d is decoding the persisted %v data: %v \n", id, name, data)
+	return data
 }
 
 func Register(value interface{}) {
@@ -112,13 +119,11 @@ func checkType(t reflect.Type) {
 	}
 }
 
-//
 // warn if the value contains non-default values,
 // as it would if one sent an RPC but the reply
 // struct was already modified. if the RPC reply
 // contains default values, GOB won't overwrite
 // the non-default value.
-//
 func checkDefault(value interface{}) {
 	if value == nil {
 		return
