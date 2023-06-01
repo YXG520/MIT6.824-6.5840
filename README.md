@@ -959,3 +959,8 @@ Test (2B_10): RPC counts aren't too high ...
 PASS
 ok      MIT6.824-6.5840/raft    44.074s
 ```
+
+## Q9 各个节点的状态机什么时候开始应用日志？
+> 主从节点提交日志之后，就可以应用状态机了，但是主从节点的日志提交条件是不同的
+，就具体的代码来说，主结点的commitIndex更新依赖于各个节点对应的matchIndex，
+而从节点的commitIndex更新依赖于主节点的commitIndex
