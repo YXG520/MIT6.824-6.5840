@@ -11,10 +11,7 @@ const baseElectionTimeout = 300
 const None = -1
 
 func (rf *Raft) StartElection() {
-	if rf.killed() {
-		DPrintf(111, "%v: I am killed!!!!!", rf.SayMeL())
-		return
-	}
+
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
@@ -35,6 +32,10 @@ func (rf *Raft) StartElection() {
 			var reply RequestVoteReply
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
+			if reply.Term != rf.currentTerm {
+				DPrintf(111, "%v: 与该RequestVote rpc的响应(任期为%d)不在一个任期，拒绝", rf.SayMeL(), reply.Term)
+				return
+			}
 			if !ok || !reply.VoteGranted {
 				DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
@@ -50,8 +51,13 @@ func (rf *Raft) StartElection() {
 				return
 			}
 			if rf.state != Candidate || rf.currentTerm != term {
+				DPrintf(111, "%v:自身状态已变为%d，拒绝变为leader。", rf.SayMeL(), rf.state)
 				return
 			}
+			//if rf.currentTerm != term {
+			//	DPrintf(111, "%v:自身状态已改变，拒绝变为leader。")
+			//	return
+			//}
 			//rf.state = Leader // 将自身设置为leader
 			rf.becomeLeader()
 			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
@@ -116,15 +122,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	reply.VoteGranted = true // 默认设置响应体为投同意票状态
-	reply.Term = rf.currentTerm
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
+		DPrintf(111, "%v: 对方的任期是%d, 我的是%d，我比它大，所以投出反对票！", rf.SayMeL(), args.Term, rf.currentTerm)
 		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
 		rf.persist()
 		return
 	}
 	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
+		rf.currentTerm = args.Term  // 更新了自己的term
+		reply.Term = rf.currentTerm //需要将新的term传递给candidate
+
 		rf.votedFor = None
 		rf.state = Follower
 	}
@@ -146,6 +155,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.persist()
 	} else {
 		reply.VoteGranted = false
-		DPrintf(111, "%v: 投出反对票给节点%d", rf.SayMeL(), args.CandidateId)
+		DPrintf(111, "%v: 投出反对票给节点%d。 votedFor:%d, update: %v, \nargs.LastLogTerm > rf.getLastEntryTerm():%v,"+
+			" args.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex: %v, "+
+			" \nargs.LastLogIndex：%d, rf.log.LastLogIndex：%d", rf.SayMeL(), args.CandidateId, rf.votedFor, update, args.LastLogTerm > rf.getLastEntryTerm(),
+			args.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex, args.LastLogIndex, rf.log.LastLogIndex)
 	}
 }

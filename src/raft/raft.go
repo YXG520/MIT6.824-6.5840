@@ -82,6 +82,11 @@ type Raft struct {
 
 	applyHelper *ApplyHelper
 	applyCond   *sync.Cond
+
+	// attrs for producing snapshot
+	snapshot                 []byte
+	snapshotLastIncludeIndex int
+	snapshotLastIncludeTerm  int
 }
 
 type RequestAppendEntriesArgs struct {
@@ -159,7 +164,11 @@ func (rf *Raft) persist() {
 	e.Encode(rf.votedFor)    // 持久化votedFor
 	e.Encode(rf.log)         // 持久化日志
 	data := w.Bytes()
-	rf.persister.SaveRaftState(data)
+	if rf.snapshotLastIncludeIndex > 0 {
+		rf.persister.SaveStateAndSnapshot(data, rf.snapshot)
+	} else {
+		rf.persister.SaveRaftState(data)
+	}
 	DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
 }
 
@@ -181,8 +190,23 @@ func (rf *Raft) readPersist() {
 			DPrintf(999, "%v: readPersist decode error\n", rf.SayMeL())
 			panic("")
 		}
-
 	}
+	rf.snapshot = rf.persister.ReadSnapshot() // 这里持久化的时候只是将快照继续读取下来
+	rf.commitIndex = rf.snapshotLastIncludeIndex
+	rf.lastApplied = rf.snapshotLastIncludeIndex
+	DPrintf(600, "%v: readPersist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
+
+}
+
+type RequestInstallSnapShotArgs struct {
+	Term             int
+	LeaderId         int
+	LastIncludeIndex int
+	LastIncludeTerm  int
+	Snapshot         []byte
+}
+type RequestInstallSnapShotReply struct {
+	Term int
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -226,6 +250,64 @@ func (rf *Raft) sendRequestAppendEntries(isHeartbeat bool, server int, args *Req
 	}
 	return ok
 }
+func (rf *Raft) sendRequestInstallSnapshot(server int, args *RequestInstallSnapShotArgs, reply *RequestInstallSnapShotReply) bool {
+	ok := rf.peers[server].Call("Raft.HandleRequestInstallSnapshot", args, reply)
+	return ok
+}
+
+// 从节点处理快照的逻辑
+func (rf *Raft) HandleRequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *RequestInstallSnapShotReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	defer DPrintf(11, "%v: RequestInstallSnapshot end  args.LeaderId=%v, args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
+	DPrintf(11, "%v: RequestInstallSnapshot begin  args.LeaderId=%v, args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
+
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		return
+	}
+	rf.state = Follower
+	//rf.electionTimer.Reset(rf.getElectionTime())
+	rf.resetElectionTimer()
+
+	if args.Term > rf.currentTerm {
+		rf.NewTermL(args.Term)
+	}
+	defer rf.persist()
+	// 如果leader发送过来的日志索引大于从节点自身存的快照索引，则需要更新
+	if args.LastIncludeIndex > rf.snapshotLastIncludeIndex {
+		// DPrintf(800, "%v: before install snapshot %s: rf.log.FirstLogIndex=%v, rf.log=%v", rf.SayMeL(), rf.SayMeL(), rf.log.FirstLogIndex, rf.log)
+		rf.snapshot = args.Snapshot
+		rf.snapshotLastIncludeIndex = args.LastIncludeIndex
+		rf.snapshotLastIncludeTerm = args.LastIncludeTerm
+		if args.LastIncludeIndex >= rf.log.LastLogIndex {
+			// 如果leader备份的index超过了自己的最后一项日志索引，则直接将日志节点置空即可
+			rf.log.Entries = make([]Entry, 0)
+			rf.log.LastLogIndex = args.LastIncludeIndex
+		} else {
+			// 否则截断直到args.LastIncludeIndex的日志
+			rf.log.Entries = rf.log.Entries[rf.log.getRealIndex(args.LastIncludeIndex+1):]
+		}
+		// 这个起始索引也会发生改变
+		rf.log.FirstLogIndex = args.LastIncludeIndex + 1
+
+		// DPrintf(800, "%v: after install snapshot rf.log.FirstLogIndex=%v, rf.log=%v", rf.SayMeL(), rf.log.FirstLogIndex, rf.log)
+		// 如果leader快照所在的日志索引大于从节点的rf.lastApplied的索引，则可以也可以让从节点的状态机应用此快照
+		if args.LastIncludeIndex > rf.lastApplied {
+			msg := ApplyMsg{
+				SnapshotValid: true,
+				Snapshot:      rf.snapshot,
+				SnapshotTerm:  rf.snapshotLastIncludeTerm,
+				SnapshotIndex: rf.snapshotLastIncludeIndex,
+			}
+			DPrintf(800, "%v: next apply snapshot rf.snapshot.LastIncludeIndex=%v rf.snapshot.LastIncludeTerm=%v\n", rf.SayMeL(), rf.snapshotLastIncludeIndex, rf.snapshotLastIncludeTerm)
+			rf.applyHelper.tryApply(&msg)
+			rf.lastApplied = args.LastIncludeIndex
+		}
+		// 更新commitIndex
+		rf.commitIndex = max(rf.commitIndex, args.LastIncludeIndex)
+	}
+}
 
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -260,7 +342,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.persist()
 	//rf.resetTrackedIndex()
 	DPrintf(101, "%v: check the newly added log index：%d", rf.SayMeL(), rf.log.LastLogIndex)
-	go rf.StartAppendEntries(false)
+	//go rf.StartAppendEntries(false)
+	rf.StartAppendEntries(false)
 
 	return index, term, isLeader
 }
@@ -289,16 +372,106 @@ func (rf *Raft) Kill() {
 
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead) // 这里的kill仅仅将对应的字段置为1
+	DPrintf(1, "%v:是否死亡呢?%v", rf.SayMeL(), z == 1)
 	return z == 1
+}
+
+// leader发送快照的逻辑
+func (rf *Raft) InstallSnapshot(serverId int) {
+
+	args := RequestInstallSnapShotArgs{}
+	reply := RequestInstallSnapShotReply{}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf(11, "%v: InstallSnapshot begin serverId=%v myinfo:rf.lastApplied=%v, rf.log.FirstLogIndex=%v\n", rf.SayMeL(), serverId, rf.lastApplied, rf.log.FirstLogIndex)
+	defer DPrintf(11, "%v: InstallSnapshot end serverId=%v\n", rf.SayMeL(), serverId)
+	if rf.state != Leader {
+		return
+	}
+	// if rf.lastApplied < rf.log.FirstLogIndex {
+	// 	return
+	// }
+	args.Term = rf.currentTerm
+	args.LeaderId = rf.me
+	args.LastIncludeIndex = rf.snapshotLastIncludeIndex
+	args.LastIncludeTerm = rf.snapshotLastIncludeTerm
+	args.Snapshot = rf.snapshot
+	rf.mu.Unlock()
+	ok := rf.sendRequestInstallSnapshot(serverId, &args, &reply)
+	rf.mu.Lock()
+	if !ok {
+		DPrintf(12, "%v: cannot sendRequestInstallSnapshot to  %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+		return
+	}
+	if rf.state != Leader {
+		return
+	}
+	if reply.Term > rf.currentTerm {
+		rf.becomeLeader()
+		rf.NewTermL(reply.Term)
+		rf.persist()
+		return
+	}
+	rf.peerTrackers[serverId].nextIndex = args.LastIncludeIndex + 1
+	rf.peerTrackers[serverId].matchIndex = args.LastIncludeIndex
+	rf.tryCommitL(rf.peerTrackers[serverId].matchIndex)
 }
 
 // // the service says it has created a snapshot that has
 // // all info up to and including index. this means the
 // // service no longer needs the log through (and including)
 // // that index. Raft should now trim its log as much as possible.
+// 两个参数，一个是日志的index，一个是持久化后的snapshot字节数组, 这里的index其实就是lastIncludedIndex
+// 这个方法应该就是发生故障重启后进行快照恢复的执行过程
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
+	DPrintf(111, "begin installSnapshot:")
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// leader才能负责讲快照分发给从节点
+	if rf.state != Leader {
+		return
+	}
+	DPrintf(111, "%v: come Snapshot index=%v", rf.SayMeL(), index)
+	// 确保日志索引没有越界
+	if rf.log.FirstLogIndex <= index {
+		if index > rf.lastApplied {
+			panic(fmt.Sprintf("%v: index=%v rf.lastApplied=%v\n", rf.SayMeL(), index, rf.lastApplied))
+		}
+		// leader先更新自己的快照，以及快照对应的日志索引和任期
+		rf.snapshot = snapshot
+		rf.snapshotLastIncludeIndex = index
+		rf.snapshotLastIncludeTerm = rf.getEntryTerm(index)
 
+		// 因为一旦使用了快照，就需要删除前面的所有日志，物理上的日志开始索引变成了当前的快照索引+1
+		newFirstLogIndex := index + 1
+		if newFirstLogIndex <= rf.log.LastLogIndex {
+			// 截取从newFirstLogIndex开始的子日志 等价于删除包括index及其之前的日志
+			rf.log.Entries = rf.log.Entries[newFirstLogIndex-rf.log.FirstLogIndex:]
+		} else {
+			// 如果新日志索引比当前日志中的索引上界还大，则更新上界值为lastIncludedIndex
+			// 这种情况只会发生在日志为空的情况下，因为日志为空，LastLogIndex=0
+			rf.log.LastLogIndex = newFirstLogIndex - 1
+			rf.log.Entries = make([]Entry, 0)
+		}
+		rf.log.FirstLogIndex = newFirstLogIndex
+		// 如果一个leader崩溃，新leader被选出时，其commitIndex很有可能是落后于旧leader的commitIndex
+		// 因为从节点的commitIndex取决于leader的commitIndex
+		rf.commitIndex = max(rf.commitIndex, index)
+		// lastApplied字段永远小于等于commitIndex，所以
+		// 新leader被选出时，其lastApplied很有可能是落后于旧leader的lastApplied
+		rf.lastApplied = max(rf.lastApplied, index)
+		rf.persist() // 将其持久化
+		// 将快照发送给所有从节点
+		for i := 0; i < len(rf.peers); i++ {
+			if i == rf.me {
+				continue
+			}
+			go rf.InstallSnapshot(i)
+		}
+		DPrintf(11, "%v: len(rf.log.Entries)=%v rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v rf.commitIndex=%v  rf.lastApplied=%v\n",
+			rf.SayMeL(), len(rf.log.Entries), rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.commitIndex, rf.lastApplied)
+	}
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
@@ -311,74 +484,16 @@ func (rf *Raft) StartAppendEntries(heart bool) {
 		if i == rf.me {
 			continue
 		}
+		//go rf.AppendEntries(i, heart)
 		go rf.AppendEntries(i, heart)
 
 	}
 }
 
-// nextIndex常规收敛方法，经 go test -run 2B测试速度比优化后的算法慢5-10ss
-func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
-	if rf.state != Leader {
-		return
-	}
-	if heart {
-		reply := RequestAppendEntriesReply{}
-		args := RequestAppendEntriesArgs{}
-		args.LeaderTerm = rf.currentTerm
-		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
-		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
-		rf.resetElectionTimer()
-		// 发送心跳包
-		return
-	} else {
-		args := RequestAppendEntriesArgs{}
-		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
-		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
-			DPrintf(111, "此时 %d 节点的nextIndex为%d,LastLogIndex为 %d, 最后一项日志为：\n", rf.me, rf.peerTrackers[rf.me].nextIndex,
-				rf.log.LastLogIndex)
-			return
-		}
-
-		args.LeaderTerm = rf.currentTerm
-		args.LeaderId = rf.me
-		args.LeaderCommit = rf.commitIndex
-		args.PrevLogTerm = rf.getEntryTerm(args.PrevLogIndex)
-		args.Entries = rf.log.getAppendEntries(args.PrevLogIndex + 1)
-		reply := RequestAppendEntriesReply{}
-		DPrintf(111, "%v: the len of log entries: %d is ready to send to node %d!!! and the entries are %v\n",
-			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
-
-		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
-		if !ok {
-			DPrintf(111, "%v: cannot request AppendEntries to %v args.term=%v\n", rf.SayMeL(), targetServerId, args.LeaderTerm)
-			return
-		}
-		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
-			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
-		if reply.FollowerTerm > rf.currentTerm {
-			rf.state = Follower
-			rf.NewTermL(reply.FollowerTerm)
-			return
-		}
-		DPrintf(111, "%v: get append reply reply.PrevLogIndex=%v reply.PrevLogTerm=%v reply.Success=%v heart=%v\n", rf.SayMeL(), reply.PrevLogIndex, reply.PrevLogTerm, reply.Success, heart)
-
-		if reply.Success {
-			rf.peerTrackers[targetServerId].nextIndex = args.PrevLogIndex + len(args.Entries) + 1
-			rf.peerTrackers[targetServerId].matchIndex = args.PrevLogIndex + len(args.Entries)
-			DPrintf(111, "success! now trying to commit the log...\n")
-			rf.tryCommitL(rf.peerTrackers[targetServerId].matchIndex)
-			return
-		}
-
-		if rf.log.empty() { //判掉为空的情况 方便后面讨论
-			return
-		}
-		rf.peerTrackers[targetServerId].nextIndex--
-	}
-}
-
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	if rf.state != Leader {
 		return
 	}
@@ -386,7 +501,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		args.LeaderTerm = rf.currentTerm
-		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
+		DPrintf(111, "\n %d is a leader with term %d, ready sending heartbeart to follower %d....", rf.me, rf.currentTerm, targetServerId)
 		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
 		rf.resetElectionTimer()
 		// 发送心跳包
@@ -397,19 +512,27 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
 			DPrintf(111, "此时 %d 节点的nextIndex为%d,LastLogIndex为 %d, 最后一项日志为：\n", rf.me, rf.peerTrackers[rf.me].nextIndex,
 				rf.log.LastLogIndex)
+			go rf.InstallSnapshot(targetServerId)
 			return
 		}
 
 		args.LeaderTerm = rf.currentTerm
 		args.LeaderId = rf.me
 		args.LeaderCommit = rf.commitIndex
-		args.PrevLogTerm = rf.getEntryTerm(args.PrevLogIndex)
-		args.Entries = rf.log.getAppendEntries(args.PrevLogIndex + 1)
-		reply := RequestAppendEntriesReply{}
-		DPrintf(111, "%v: the len of log entries: %d is ready to send to node %d!!! and the entries are %v\n",
-			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
 
-		//fmt.Printf("\n %d is a leader, ready sending log entries to follower %d with args leaderTerm:%d, PrevLogIndex: %d, PrevLogTerm:%d, lastEntry:%v....", rf.me, targetServerId, args.LeaderTerm, args.PrevLogIndex, args.PrevLogTerm, args.Entries[args.PrevLogIndex])
+		data := rf.log.getAppendEntries(args.PrevLogIndex + 1)
+		term := rf.getEntryTerm(args.PrevLogIndex)
+		DPrintf(111, "%v: ready to send entries to %d with rf.log.FirstLogIndex %d rf.log.LastLogIndex %d, rf.peerTrackers[targetServerId].nextIndex-1 %d, and "+
+			"\n args.PrevLogIndex %d. \n The lastIncludeIndex is %d and lastIncludeTerm is %d. \n The Entries' len is %d and contents are as follow: %v."+
+			" \n The append entries' len is %d and contents are as follow: %v",
+			rf.SayMeL(), targetServerId, rf.log.FirstLogIndex, rf.log.LastLogIndex,
+			rf.peerTrackers[targetServerId].nextIndex-1, args.PrevLogIndex, rf.snapshotLastIncludeIndex, rf.snapshotLastIncludeTerm,
+			len(rf.log.Entries), rf.log.Entries, len(data), data)
+		args.Entries = data
+		args.PrevLogTerm = term
+		reply := RequestAppendEntriesReply{}
+		DPrintf(111, "%v: the len of append log entries: %d is ready to send to node %d!!! and the entries are %v\n",
+			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
 
 		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
 		if !ok {
@@ -435,11 +558,16 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		}
 
 		//reply.Success is false
-		if rf.log.empty() { //判掉为空的情况 方便后面讨论
-			//go rf.InstallSnapshot(serverId)
+		// leader自己的日志被清空，说明进行了一次快照，需要传递给从节点
+		if rf.log.empty() { //
+			go rf.InstallSnapshot(targetServerId)
 			return
 		}
+		// 如果从节点的最后一个日志项索引赶不上
+		// 或者刚好赶上leader的最近一次快照的日志索引
+		// 则直接给从节点发送这个快照
 		if reply.PrevLogIndex+1 < rf.log.FirstLogIndex {
+			go rf.InstallSnapshot(targetServerId)
 			return
 		}
 
@@ -455,8 +583,17 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			for PrevIndex >= rf.log.FirstLogIndex && rf.getEntryTerm(PrevIndex) == rf.getEntryTerm(reply.PrevLogIndex) {
 				PrevIndex--
 			}
+			if PrevIndex+1 < rf.log.FirstLogIndex {
+				if rf.log.FirstLogIndex > 1 {
+					go rf.InstallSnapshot(targetServerId)
+					return
+				}
+			}
 			rf.peerTrackers[targetServerId].nextIndex = PrevIndex + 1
 		}
+		DPrintf(3, "%v in AppendEntries change nextindex[%v]=%v and retry\n",
+			rf.SayMeL(), targetServerId, rf.peerTrackers[targetServerId].nextIndex)
+		//go rf.AppendEntries(targetServerId, false)
 	}
 }
 
@@ -470,6 +607,7 @@ func (rf *Raft) SayMeL() string {
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
+// 这里的tester相当于状态机
 func (rf *Raft) sendMsgToTester() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -520,8 +658,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.resetElectionTimer()
 	rf.heartbeatTimeout = heartbeatTimeout // 这个是固定的
 	rf.log = NewLog()
+	rf.snapshot = nil
+	rf.snapshotLastIncludeIndex = 0
+	rf.snapshotLastIncludeTerm = 0
 	// initialize from state persisted before a crash
 	rf.readPersist()
+	// 必须在持久化之后才能调用,
 	rf.applyHelper = NewApplyHelper(applyCh, rf.lastApplied)
 	rf.commitIndex = 0
 	rf.lastApplied = 0

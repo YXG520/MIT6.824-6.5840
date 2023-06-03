@@ -321,7 +321,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	cfg.mu.Lock()
 	cfg.rafts[i] = rf
 	cfg.mu.Unlock()
-
+	// 同时将这个已经读取到的
 	go applier(i, applyCh)
 
 	svc := labrpc.MakeService(rf)

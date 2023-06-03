@@ -137,9 +137,13 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 			reply.PrevLogTerm = rf.getEntryTerm(prevIndex)
 			DPrintf(111, "%v: stepping over the index of currentTerm to the last log entry of last term", rf.SayMeL())
 
+		} else {
+			reply.PrevLogIndex = rf.snapshotLastIncludeIndex
+			reply.PrevLogTerm = rf.snapshotLastIncludeTerm
 		}
-
 	}
+	DPrintf(111, "%v: reply to %v reply.Term=%v reply.Success=%v reply.PrevLogIndex=%v reply.PrevLogTerm=%v\n", rf.SayMeL(), args.LeaderId, reply.FollowerTerm, reply.Success,
+		reply.PrevLogIndex, reply.PrevLogTerm)
 
 }
 

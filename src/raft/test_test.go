@@ -61,21 +61,24 @@ func TestReElection2A(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 
 	// if the leader disconnects, a new one should be elected.
+	DPrintf(111, "ready to disconnect the leader %d", leader1)
+
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
+	DPrintf(111, "ready to reconnect the old leader %d", leader1)
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
-
+	DPrintf(111, "detected the new leader is %d and ready to disable 2 nodes including %d and %d...", leader2, leader2, leader2+1)
 	// if there's no quorum, no new leader should
 	// be elected.
 	cfg.disconnect(leader2)
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
-
+	DPrintf(111, "checking leader...")
 	// check that the one connected server
 	// does not think it is the leader.
 	cfg.checkNoLeader()
@@ -100,22 +103,64 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
+	iters := 5
+	for ii := 0; ii < iters; ii++ {
+		DPrintf(110, "the  %d th iter...\n", ii)
+		// disconnect three nodes
+		i1 := rand.Int() % servers
+		//i2 := rand.Int() % servers
+		//i3 := rand.Int() % servers
+		DPrintf(111, "now attempting to disconnect one node %d...", i1)
+		cfg.disconnect(i1)
+		//cfg.disconnect(i2)
+		//cfg.disconnect(i3)
+		// either the current leader should still be alive,
+		// or the remaining four should elect a new one.
+		DPrintf(111, "check one leader...")
+		cfg.checkOneLeader()
+		DPrintf(111, "finish to check one leader...")
+
+		cfg.connect(i1)
+		DPrintf(111, "now attempting to connect one node...")
+
+		//cfg.connect(i2)
+		//cfg.connect(i3)
+	}
+
+	cfg.checkOneLeader()
+
+	cfg.end()
+}
+
+func TestManyElections2A2(t *testing.T) {
+	servers := 7
+	cfg := make_config(t, servers, false, false)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (2A): multiple elections")
+
+	cfg.checkOneLeader()
+
 	iters := 10
-	for ii := 1; ii < iters; ii++ {
+	for ii := 0; ii < iters; ii++ {
 		DPrintf(110, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
 		i3 := rand.Int() % servers
+		DPrintf(111, "now attempting to disconnect one node %d...", i1)
 		cfg.disconnect(i1)
 		cfg.disconnect(i2)
 		cfg.disconnect(i3)
-
 		// either the current leader should still be alive,
 		// or the remaining four should elect a new one.
+		DPrintf(111, "check one leader...")
 		cfg.checkOneLeader()
+		DPrintf(111, "finish to check one leader...")
 
 		cfg.connect(i1)
+		DPrintf(111, "now attempting to connect one node...")
+
 		cfg.connect(i2)
 		cfg.connect(i3)
 	}
@@ -1119,8 +1164,8 @@ func TestUnreliableChurn2C(t *testing.T) {
 const MAXLOGSIZE = 2000
 
 func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
-	iters := 30
-	servers := 3
+	iters := 200
+	servers := 11
 	cfg := make_config(t, servers, !reliable, true)
 	defer cfg.cleanup()
 
@@ -1128,7 +1173,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 	cfg.one(rand.Int(), servers, true)
 	leader1 := cfg.checkOneLeader()
-
+	DPrintf(111, "check one leader successfully!")
 	for i := 0; i < iters; i++ {
 		victim := (leader1 + 1) % servers
 		sender := leader1
@@ -1136,17 +1181,19 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			sender = (leader1 + 1) % servers
 			victim = leader1
 		}
-
+		DPrintf(111, "begin deliberately disconnect one node....")
 		if disconnect {
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
+		DPrintf(111, "finishing testing the sync data if distributed to all healthy nodes....")
+
 		if crash {
 			cfg.crash1(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
-		// perhaps send enough to get a snapshot
+		// send enough logs to the leader node to get a snapshot
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 		for i := 0; i < nn; i++ {
 			cfg.rafts[sender].Start(rand.Int())
@@ -1172,6 +1219,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
+
 		if crash {
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
