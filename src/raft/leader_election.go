@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"math/rand"
 	"time"
 )
@@ -16,7 +15,7 @@ func (rf *Raft) StartElection() {
 	term := rf.currentTerm
 	done := false
 	votes := 1
-	fmt.Printf("[%d] attempting an election at term %d...", rf.me, rf.currentTerm)
+	DPrintf(111, "[%d] attempting an election at term %d...", rf.me, rf.currentTerm)
 	args := RequestVoteArgs{rf.currentTerm, rf.me}
 
 	for i, _ := range rf.peers {
@@ -29,11 +28,14 @@ func (rf *Raft) StartElection() {
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok {
-				DPrintf("%v: cannot give a Vote to %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
+			if !ok {
+				DPrintf(111, "%v: cannot give a Vote to %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+
+			}
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -44,9 +46,11 @@ func (rf *Raft) StartElection() {
 			if rf.state != Candidate || rf.currentTerm != term {
 				return
 			}
-			fmt.Printf("\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!\n", rf.me, rf.currentTerm, rf.state)
-			rf.state = Leader           // 将自身设置为leader
-			rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
+			DPrintf(111, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!\n", rf.me, rf.currentTerm, rf.state)
+			rf.state = Leader // 将自身设置为leader
+			//rf.mu.Lock()
+			//go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
+			//rf.mu.Unlock()
 		}(i)
 	}
 }
@@ -61,16 +65,6 @@ func (rf *Raft) resetElectionTimer() {
 	rf.lastElection = time.Now()
 }
 
-func (rf *Raft) becomeFollower(term int) bool {
-	rf.state = Follower
-	if term > rf.currentTerm {
-		rf.currentTerm = term
-		rf.votedFor = None
-		return true
-	}
-	return false
-}
-
 func (rf *Raft) becomeCandidate() {
 	//defer rf.persist()
 	rf.state = Candidate
@@ -80,12 +74,7 @@ func (rf *Raft) becomeCandidate() {
 	rf.resetElectionTimer()
 }
 
-func (rf *Raft) becomeLeader() {
-	rf.state = Leader
-	//rf.resetTrackedIndexes()
-}
-
-// example RequestVote RPC handler.
+// example RequestVoteRPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()

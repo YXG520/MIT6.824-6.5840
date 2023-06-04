@@ -114,7 +114,7 @@ func (rf *Raft) GetState() (int, bool) {
 	defer rf.mu.Unlock()
 	term = rf.currentTerm
 	isleader = rf.state == Leader
-	////fmt.Printf("getting Leader State %d and term %d of node %d \n", rf.state, rf.currentTerm, rf.me)
+	////DPrintf(110,"getting Leader State %d and term %d of node %d \n", rf.state, rf.currentTerm, rf.me)
 	return term, isleader
 }
 
@@ -245,18 +245,6 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-func (rf *Raft) callRequestVote(serverId int) bool {
-	//log.Printf("[%d] ready to send request vote to %d", rf.me, serverId)
-	args := RequestVoteArgs{rf.currentTerm, rf.me}
-	var reply RequestVoteReply
-	ok := rf.sendRequestVote(serverId, &args, &reply)
-	//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
-	if !ok {
-		return false
-	}
-	return true
-}
-
 // // the service says it has created a snapshot that has
 // // all info up to and including index. this means the
 // // service no longer needs the log through (and including)
@@ -283,19 +271,21 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 	defer rf.mu.Unlock()
 	reply.FollowerTerm = rf.currentTerm
 	reply.Success = true
-	//fmt.Printf("\n  %d receive heartbeat at leader's term %d, and my term is %d", rf.me, args.LeaderTerm, rf.currentTerm)
+	//DPrintf(110,"\n  %d receive heartbeat at leader's term %d, and my term is %d", rf.me, args.LeaderTerm, rf.currentTerm)
 	// 旧任期的leader抛弃掉,
 	if args.LeaderTerm < rf.currentTerm {
 		reply.Success = false
 		return
 	}
 	rf.resetElectionTimer()
-	// 需要转变自己的身份为Follower
 	rf.state = Follower
+
+	// 需要转变自己的身份为Follower
 	// 承认来者是个合法的新leader，则任期一定大于自己，此时需要设置votedFor为-1以及
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
+
 	}
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 	//log.Printf("[%v]'s electionTimeout is reset and its state converts to %v", rf.me, rf.state)
@@ -304,6 +294,8 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	reply := RequestAppendEntriesReply{}
 	args := RequestAppendEntriesArgs{}
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	args.LeaderTerm = rf.currentTerm
 	if rf.state != Leader {
 		return
@@ -340,7 +332,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	//Leader选举协程
-	//fmt.Printf("finishing creating raft node %d", rf.me)
+	//DPrintf(110,"finishing creating raft node %d", rf.me)
 	go rf.ticker()
 	return rf
 }
@@ -376,9 +368,5 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 		time.Sleep(tickInterval)
 	}
-	fmt.Printf("tim")
-}
-
-func (rf *Raft) SaySth() string {
-	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	DPrintf(110, "tim")
 }
