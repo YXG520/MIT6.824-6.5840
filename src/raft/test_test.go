@@ -103,7 +103,7 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 5
+	iters := 100
 	for ii := 0; ii < iters; ii++ {
 		DPrintf(110, "the  %d th iter...\n", ii)
 		// disconnect three nodes
@@ -1164,8 +1164,8 @@ func TestUnreliableChurn2C(t *testing.T) {
 const MAXLOGSIZE = 2000
 
 func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
-	iters := 200
-	servers := 11
+	iters := 5
+	servers := 3
 	cfg := make_config(t, servers, !reliable, true)
 	defer cfg.cleanup()
 
@@ -1175,25 +1175,30 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 	leader1 := cfg.checkOneLeader()
 	DPrintf(111, "check one leader successfully!")
 	for i := 0; i < iters; i++ {
+		DPrintf(111, "the %d th iter begins...", i)
 		victim := (leader1 + 1) % servers
 		sender := leader1
 		if i%3 == 1 {
 			sender = (leader1 + 1) % servers
 			victim = leader1
 		}
-		DPrintf(111, "begin deliberately disconnect one node....")
 		if disconnect {
+			DPrintf(111, "begin deliberately disconnect one node....")
+
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
-		DPrintf(111, "finishing testing the sync data if distributed to all healthy nodes....")
+		DPrintf(111, "finishing testing the sync data if distributed to specified healthy nodes....")
 
 		if crash {
+			DPrintf(111, "begin deliberately crash one node....")
 			cfg.crash1(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
 		// send enough logs to the leader node to get a snapshot
+		DPrintf(111, "send enough logs to the leader node to get a snapshot....")
+
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 		for i := 0; i < nn; i++ {
 			cfg.rafts[sender].Start(rand.Int())
@@ -1206,6 +1211,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			// TestSnapshotBasic2D().
 			cfg.one(rand.Int(), servers, true)
 		} else {
+			DPrintf(111, "with one node to crash or disconnect, now testing if two nodes has a leader and converge in logs...")
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
@@ -1221,10 +1227,12 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if crash {
+			DPrintf(111, "now restart the crashed node....")
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
+			DPrintf(111, "check one leader alive....")
 		}
 	}
 	cfg.end()

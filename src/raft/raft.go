@@ -461,6 +461,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 		// lastApplied字段永远小于等于commitIndex，所以
 		// 新leader被选出时，其lastApplied很有可能是落后于旧leader的lastApplied
 		rf.lastApplied = max(rf.lastApplied, index)
+		DPrintf(111, "%v:进行快照后，更新commitIndex为%d, lastApplied为%d", rf.SayMeL(), rf.commitIndex, rf.lastApplied)
 		rf.persist() // 将其持久化
 		// 将快照发送给所有从节点
 		for i := 0; i < len(rf.peers); i++ {
@@ -492,8 +493,8 @@ func (rf *Raft) StartAppendEntries(heart bool) {
 
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	if rf.state != Leader {
 		return
 	}
@@ -612,7 +613,7 @@ func (rf *Raft) sendMsgToTester() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	for !rf.killed() {
-		DPrintf(11, "%v: it is being blocked...", rf.SayMeL())
+		DPrintf(110, "%v: it is being blocked...", rf.SayMeL())
 		rf.applyCond.Wait()
 
 		for rf.lastApplied+1 <= rf.commitIndex {
