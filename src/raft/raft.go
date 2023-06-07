@@ -80,6 +80,7 @@ type RequestAppendEntriesArgs struct {
 	PrevLogTerm  int        // 新日志的上一个日志的任期
 	Logs         []ApplyMsg // 需要被保存的日志条目,可能有多个
 	LeaderCommit int        // Leader已提交的最高的日志项目的索引
+	LeaderId     int
 }
 
 type RequestAppendEntriesReply struct {
@@ -111,9 +112,10 @@ func (rf *Raft) GetState() (int, bool) {
 	var isleader bool
 	// Your code here (2A).
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	term = rf.currentTerm
 	isleader = rf.state == Leader
+	rf.mu.Unlock()
+
 	////DPrintf(110,"getting Leader State %d and term %d of node %d \n", rf.state, rf.currentTerm, rf.me)
 	return term, isleader
 }
@@ -255,29 +257,39 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-
+	rf.resetElectionTimer()
+	// 所有节点共享同一份request参数
+	args := RequestAppendEntriesArgs{}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	args.LeaderTerm = rf.currentTerm
+	args.LeaderId = rf.me
 	// 并行向其他节点发送心跳，让他们知道此刻已经有一个leader产生
 	for i, _ := range rf.peers {
 		if i == rf.me {
 			continue
 		}
-		go rf.AppendEntries(i, heart)
+		go rf.AppendEntries(i, heart, &args)
 	}
 }
 
 // 定义一个心跳兼日志同步处理器，这个方法是Candidate和Follower节点的处理
 func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
+	DPrintf(111, "receiving heartbeat from leader %d and gonna get the lock...", args.LeaderId)
 	rf.mu.Lock() // 加接收心跳方的锁
-	defer rf.mu.Unlock()
-	reply.FollowerTerm = rf.currentTerm
 	reply.Success = true
-	//DPrintf(110,"\n  %d receive heartbeat at leader's term %d, and my term is %d", rf.me, args.LeaderTerm, rf.currentTerm)
+	DPrintf(110, "\n  %d receive heartbeat at leader %d's term %d, and my term is %d", rf.me, args.LeaderId, args.LeaderTerm, rf.currentTerm)
 	// 旧任期的leader抛弃掉,
 	if args.LeaderTerm < rf.currentTerm {
+		reply.FollowerTerm = rf.currentTerm
 		reply.Success = false
+		rf.mu.Unlock()
 		return
 	}
+	rf.mu.Unlock()
 	rf.resetElectionTimer()
+	DPrintf(111, "reset self electionTimer ")
+	rf.mu.Lock()
 	rf.state = Follower
 
 	// 需要转变自己的身份为Follower
@@ -285,26 +297,41 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
-
+		reply.FollowerTerm = rf.currentTerm // 将更新了的任期传给主结点
 	}
+	rf.mu.Unlock()
+
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 	//log.Printf("[%v]'s electionTimeout is reset and its state converts to %v", rf.me, rf.state)
 }
 
-func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
+func (rf *Raft) AppendEntries(targetServerId int, heart bool, args *RequestAppendEntriesArgs) {
+
 	reply := RequestAppendEntriesReply{}
-	args := RequestAppendEntriesArgs{}
-	//rf.mu.Lock()
-	//defer rf.mu.Unlock()
-	args.LeaderTerm = rf.currentTerm
+	rf.mu.Lock()
 	if rf.state != Leader {
 		return
 	}
+	DPrintf(111, "%v: is ready to send heartbeat to %d", rf.SayMeL(), targetServerId)
+	rf.mu.Unlock()
+
 	if heart {
-		rf.sendRequestAppendEntries(targetServerId, &args, &reply)
+		rf.sendRequestAppendEntries(targetServerId, args, &reply)
+		//ok := rf.sendRequestAppendEntries(targetServerId, &args, &reply)
+		//rf.mu.Lock()
+		//if !ok {
+		//	return
+		//}
+		//if reply.FollowerTerm > rf.currentTerm {
+		//	rf.currentTerm = reply.FollowerTerm
+		//	rf.mu.Unlock()
+		//	rf.ToFollower()
+		//}
 	}
+
 }
 func (rf *Raft) SayMeL() string {
+
 	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
 }
 
@@ -326,8 +353,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// Your initialization code here (2A, 2B, 2C).
 	rf.currentTerm = 0
 	rf.votedFor = None
-	rf.state = Follower //设置节点的初始状态为follower
-	rf.resetElectionTimer()
+	rf.state = Follower                    //设置节点的初始状态为follower
 	rf.heartbeatTimeout = heartbeatTimeout // 这个是固定的
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -339,33 +365,41 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 func (rf *Raft) ticker() {
 	// 如果这个raft节点没有掉线,则一直保持活跃不下线状态（可以因为网络原因掉线，也可以tester主动让其掉线以便测试）
+
 	for !rf.killed() {
 		rf.mu.Lock()
-		switch rf.state {
+		state := rf.state
+		rf.mu.Unlock()
+		//rf.mu.Lock()
+		switch state {
 		case Follower:
-			fallthrough // 相当于执行#A到#C代码块,
-		case Candidate:
 			if rf.pastElectionTimeout() { //#A
+				rf.resetElectionTimer()
+				rf.becomeCandidate()
 				rf.StartElection()
 			} //#C
+		case Candidate:
+			if rf.pastElectionTimeout() {
+				rf.ToFollower()
+			}
 		case Leader:
 			//if !rf.quorumActive() {
 			//	// 如果票数不够需要转变为follower
 			//	break
 			//}
 			// 只有Leader节点才能发送心跳和日志给从节点
-			isHeartbeat := false
-			// 检测是需要发送单纯的心跳还是发送日志
-			// 心跳定时器过期则发送心跳，否则发送日志
-			if rf.pastHeartbeatTimeout() {
-				isHeartbeat = true
-				rf.resetHeartbeatTimer()
-			}
+			//isHeartbeat := false
+			//// 检测是需要发送单纯的心跳还是发送日志
+			//// 心跳定时器过期则发送心跳，否则发送日志
+			//if rf.pastHeartbeatTimeout() {
+			//	isHeartbeat = true
+			//	rf.resetHeartbeatTimer()
+			//}
+			//rf.StartAppendEntries(isHeartbeat)
 
-			rf.StartAppendEntries(isHeartbeat)
 		}
 
-		rf.mu.Unlock()
+		//rf.mu.Unlock()
 		time.Sleep(tickInterval)
 	}
 	DPrintf(110, "tim")
