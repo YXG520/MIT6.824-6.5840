@@ -27,15 +27,16 @@ func (rf *Raft) StartElection() {
 			var reply RequestVoteReply
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
-			if !ok {
+			if !ok || !reply.VoteGranted {
+				return
+			}
+			// 必须要保证相应的任期等于
+			if reply.Term != term {
+				DPrintf(111, "%v: cannot give a Vote to %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
-			if !ok {
-				DPrintf(111, "%v: cannot give a Vote to %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
-
-			}
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -49,7 +50,7 @@ func (rf *Raft) StartElection() {
 			DPrintf(111, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!\n", rf.me, rf.currentTerm, rf.state)
 			rf.state = Leader // 将自身设置为leader
 			//rf.mu.Lock()
-			//go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
+			go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 			//rf.mu.Unlock()
 		}(i)
 	}
@@ -80,8 +81,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	////fmt.Printf("[%d] begins grasping the lock...", rf.me)
-	reply.VoteGranted = true    // 默认设置响应体为投同意票状态
-	reply.Term = rf.currentTerm //
+	reply.VoteGranted = true // 默认设置响应体为投同意票状态
+	reply.Term = rf.currentTerm
 	//fmt.Printf("%v[RequestVote] from %v at args term: %v and current term: %v\n", args.CandidateId, rf.me, args.Term, rf.currentTerm)
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
@@ -92,12 +93,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.currentTerm = args.Term
 		rf.votedFor = None
 		rf.state = Follower
+		reply.Term = rf.currentTerm
 	}
 	//Lab2B的日志复制直接确定为true
 	update := true
 
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && update {
-		//if rf.votedFor == -1 {
 		//竞选任期大于自身任期，则更新自身任期，并转为follower
 		rf.votedFor = args.CandidateId
 		rf.state = Follower

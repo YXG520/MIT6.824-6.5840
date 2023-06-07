@@ -285,7 +285,7 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
-
+		reply.FollowerTerm = rf.currentTerm
 	}
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 	//log.Printf("[%v]'s electionTimeout is reset and its state converts to %v", rf.me, rf.state)
