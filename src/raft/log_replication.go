@@ -5,10 +5,14 @@ import (
 )
 
 func (rf *Raft) pastHeartbeatTimeout() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	return time.Since(rf.lastHeartbeat) > rf.heartbeatTimeout
 }
 
 func (rf *Raft) resetHeartbeatTimer() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.lastHeartbeat = time.Now()
 }
 
@@ -83,11 +87,12 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 		return
 	}
 	rf.resetElectionTimer()
-	rf.state = Follower // 需要转变自己的身份为Follower
+	rf.state = Follower // 需要转变自己的保持为Follower
 
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None // 调整votedFor为-1
-		rf.currentTerm++
+		rf.currentTerm = args.LeaderTerm
+		reply.FollowerTerm = rf.currentTerm
 	}
 
 	if args.PrevLogIndex+1 < rf.log.FirstLogIndex || args.PrevLogIndex > rf.log.LastLogIndex {
@@ -138,7 +143,6 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 			DPrintf(111, "%v: stepping over the index of currentTerm to the last log entry of last term", rf.SayMeL())
 
 		}
-
 	}
 
 }
