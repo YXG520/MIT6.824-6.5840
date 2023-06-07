@@ -72,7 +72,7 @@ MIT6.5840(also early called 6.824) Distributed System in Spring 2023
 > 与此同时节点A收到了任期9时产生的B和C节点的同意投票rpc，如果A不做比较
 > 该投票是旧任期还是新任期，此时A认为自己可以成为leader，
 > 此时集群中有两个leader。
-> 
+>
 2 如何识别无效票
 > 方法已经在2.1中说了
 
