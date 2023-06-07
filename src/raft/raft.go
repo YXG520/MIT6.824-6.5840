@@ -459,7 +459,6 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			}
 			rf.peerTrackers[targetServerId].nextIndex = PrevIndex + 1
 		}
-		//rf.mu.Unlock()
 
 	}
 }
