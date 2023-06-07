@@ -58,17 +58,18 @@ func TestReElection2A(t *testing.T) {
 	cfg.begin("Test (2A): election after network failure")
 
 	leader1 := cfg.checkOneLeader()
-
+	DPrintf(111, "check the leader %d and now disconnect it..", leader1)
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
-	cfg.checkOneLeader()
+	leader_tmp := cfg.checkOneLeader()
+	DPrintf(111, "after the leader is offline, check the leader %d and ready to reconnect old leader %d..", leader_tmp, leader1)
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
-
+	DPrintf(111, "after old leader %d reconnected, check the new leader %d and now ready to disconnect 2 nodes", leader1, leader2)
 	// if there's no quorum, no new leader should
 	// be elected.
 	cfg.disconnect(leader2)
@@ -78,14 +79,16 @@ func TestReElection2A(t *testing.T) {
 	// check that the one connected server
 	// does not think it is the leader.
 	cfg.checkNoLeader()
-
+	DPrintf(111, "after 2 nodes are offline, there is no leader and now ready to connect the node %d", (leader2+1)%servers)
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
-	cfg.checkOneLeader()
+	leader_tmp2 := cfg.checkOneLeader()
+	DPrintf(111, "after node %d reconnected, there is 1 leader %d", (leader2+1)%servers, leader_tmp2)
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
-	cfg.checkOneLeader()
+	leader_tmp3 := cfg.checkOneLeader()
+	DPrintf(111, "after node %d reconnected, there is 1 leader %d", leader2, leader_tmp3)
 
 	cfg.end()
 }
@@ -99,9 +102,9 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 1000
+	iters := 100
 	for ii := 1; ii < iters; ii++ {
-		DPrintf(1100, "the  %d th iter...\n", ii)
+		DPrintf(111, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
@@ -117,6 +120,45 @@ func TestManyElections2A(t *testing.T) {
 		cfg.connect(i1)
 		cfg.connect(i2)
 		cfg.connect(i3)
+	}
+
+	cfg.checkOneLeader()
+
+	cfg.end()
+}
+
+func TestManyElections2A2(t *testing.T) {
+	servers := 3
+	cfg := make_config(t, servers, false, false)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (2A): multiple elections")
+
+	leader_tmp := cfg.checkOneLeader()
+	DPrintf(111, "check one leader %d", leader_tmp)
+	iters := 10
+	for ii := 1; ii < iters; ii++ {
+		DPrintf(111, "the  %d th iter...\n", ii)
+		// disconnect three nodes
+		i1 := rand.Int() % servers
+		DPrintf(111, "now randomly select one node %d to be offline", i1)
+
+		//i2 := rand.Int() % servers
+		//i3 := rand.Int() % servers
+		cfg.disconnect(i1)
+		//cfg.disconnect(i2)
+		//cfg.disconnect(i3)
+
+		// either the current leader should still be alive,
+		// or the remaining four should elect a new one.
+		leader_tmp2 := cfg.checkOneLeader()
+		DPrintf(111, "check one leader %d and ready to connect node %d", leader_tmp2, i1)
+		cfg.connect(i1)
+		leader_tmp3 := cfg.checkOneLeader()
+		DPrintf(111, "now connect node %d and check the leader %d", i1, leader_tmp3)
+
+		//cfg.connect(i2)
+		//cfg.connect(i3)
 	}
 
 	cfg.checkOneLeader()

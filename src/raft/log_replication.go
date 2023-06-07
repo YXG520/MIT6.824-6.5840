@@ -145,6 +145,7 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 
 // 主节点对日志进行提交，其条件是多余一半的从节点的commitIndex>=leader节点当前提交的commitIndex
 func (rf *Raft) tryCommitL(matchIndex int) {
+
 	if matchIndex <= rf.commitIndex {
 		// 首先matchIndex应该是大于leader节点的commitIndex才能提交，因为commitIndex及其之前的不需要更新
 		return
@@ -175,6 +176,8 @@ func (rf *Raft) tryCommitL(matchIndex int) {
 	}
 	//DPrintf(2, "%v: rf.commitIndex = %v ,trycommitindex=%v,matchindex=%v cnt=%v", rf.SayMeL(), rf.commitIndex, index, rf.matchIndex, cnt)
 	// 超过半数就提交
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	if cnt > len(rf.peers)/2 {
 		rf.commitIndex = matchIndex
 		if rf.commitIndex > rf.log.LastLogIndex {

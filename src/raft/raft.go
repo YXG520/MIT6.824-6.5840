@@ -270,12 +270,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
-	DPrintf(111, "%v : is killed!!", rf.SayMeL())
 
 	// Your code here, if desired.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	rf.applyHelper.Kill()
+	DPrintf(111, "%v : is killed!!", rf.SayMeL())
 	DPrintf(111, "%v : my applyHelper is killed!!", rf.SayMeL())
 
 	rf.state = Follower
@@ -375,21 +375,26 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	if rf.state != Leader {
-		return
-	}
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
+
 	if heart {
+		rf.mu.Lock()
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		args.LeaderTerm = rf.currentTerm
+		rf.mu.Unlock()
+
 		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
 		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
+		rf.mu.Lock()
 		rf.resetElectionTimer()
+		rf.mu.Unlock()
+
 		// 发送心跳包
 		return
 	} else {
+		rf.mu.Lock()
 		args := RequestAppendEntriesArgs{}
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
@@ -397,23 +402,25 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 				rf.log.LastLogIndex)
 			return
 		}
-
 		args.LeaderTerm = rf.currentTerm
 		args.LeaderId = rf.me
 		args.LeaderCommit = rf.commitIndex
 		args.PrevLogTerm = rf.getEntryTerm(args.PrevLogIndex)
 		args.Entries = rf.log.getAppendEntries(args.PrevLogIndex + 1)
-		reply := RequestAppendEntriesReply{}
 		DPrintf(111, "%v: the len of log entries: %d is ready to send to node %d!!! and the entries are %v\n",
 			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
+		rf.mu.Unlock()
 
 		//fmt.Printf("\n %d is a leader, ready sending log entries to follower %d with args leaderTerm:%d, PrevLogIndex: %d, PrevLogTerm:%d, lastEntry:%v....", rf.me, targetServerId, args.LeaderTerm, args.PrevLogIndex, args.PrevLogTerm, args.Entries[args.PrevLogIndex])
+		reply := RequestAppendEntriesReply{}
 
 		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
 		if !ok {
-			DPrintf(111, "%v: cannot request AppendEntries to %v args.term=%v\n", rf.SayMeL(), targetServerId, args.LeaderTerm)
+			//DPrintf(111, "%v: cannot request AppendEntries to %v args.term=%v\n", rf.SayMeL(), targetServerId, args.LeaderTerm)
 			return
 		}
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
 		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
@@ -454,6 +461,8 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			}
 			rf.peerTrackers[targetServerId].nextIndex = PrevIndex + 1
 		}
+		//rf.mu.Unlock()
+
 	}
 }
 
@@ -551,7 +560,7 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 		switch state {
 		case Follower:
-			DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
+			//DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
 			fallthrough // 相当于执行#A到#C代码块,
 			//if rf.pastElectionTimeout() {
 			//	rf.StartElection()

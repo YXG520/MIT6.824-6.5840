@@ -106,10 +106,11 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 	// 旧任期的leader抛弃掉
 	if args.LeaderTerm < rf.currentTerm {
 		reply.Success = false
+		reply.FollowerTerm = rf.currentTerm
 		return
 	}
 	//DPrintf(200, "I am %d and the dead state is %d with term %d", rf.me)
-	DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
+	//DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
 	rf.resetElectionTimer()
 	// 需要转变自己的身份为Follower
 	rf.state = Follower
@@ -117,6 +118,8 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
+		reply.FollowerTerm = rf.currentTerm
+
 	}
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 }
