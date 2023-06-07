@@ -294,12 +294,14 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	reply := RequestAppendEntriesReply{}
 	args := RequestAppendEntriesArgs{}
-	//rf.mu.Lock()
+	rf.mu.Lock()
 	//defer rf.mu.Unlock()
 	args.LeaderTerm = rf.currentTerm
 	if rf.state != Leader {
+		rf.mu.Unlock()
 		return
 	}
+	rf.mu.Unlock()
 	if heart {
 		rf.sendRequestAppendEntries(targetServerId, &args, &reply)
 	}

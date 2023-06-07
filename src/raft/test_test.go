@@ -100,7 +100,7 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 10
+	iters := 1500
 	for ii := 1; ii < iters; ii++ {
 		DPrintf(111, "the  %d th iter...\n", ii)
 		// disconnect three nodes
