@@ -11,7 +11,8 @@ const baseElectionTimeout = 300
 const None = -1
 
 func (rf *Raft) StartElection() {
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
@@ -32,14 +33,20 @@ func (rf *Raft) StartElection() {
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok || !reply.VoteGranted {
-				DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
-			if reply.Term < rf.currentTerm {
-				DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
+			//if reply.Term < rf.currentTerm {
+			//	DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
+			//	return
+			//}
+			if reply.Term < term {
+				// 保证不是旧任期时产生的无效投票
+				//DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
 				return
 			}
-			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
+
+			//DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
 			// 统计票数
@@ -55,12 +62,15 @@ func (rf *Raft) StartElection() {
 			//rf.state = Leader // 将自身设置为leader
 			rf.becomeLeader()
 			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
-			rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
+
+			go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 		}(i)
 	}
 }
 
 func (rf *Raft) pastElectionTimeout() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	return time.Since(rf.lastElection) > rf.electionTimeout
 }
 
@@ -127,7 +137,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		reply.Term = rf.currentTerm
-
 		rf.votedFor = None
 		rf.state = Follower
 	}

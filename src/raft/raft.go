@@ -296,6 +296,8 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	if rf.state != Leader {
 		return
 	}
@@ -373,6 +375,8 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	if rf.state != Leader {
 		return
 	}
@@ -543,16 +547,17 @@ func (rf *Raft) ticker() {
 	// 如果这个raft节点没有掉线,则一直保持活跃不下线状态（可以因为网络原因掉线，也可以tester主动让其掉线以便测试）
 	for !rf.killed() {
 		rf.mu.Lock()
-		switch rf.state {
+		state := rf.state
+		rf.mu.Unlock()
+		switch state {
 		case Follower:
 			DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
-			//fallthrough // 相当于执行#A到#C代码块,
-			if rf.pastElectionTimeout() {
-				rf.StartElection()
-			}
+			fallthrough // 相当于执行#A到#C代码块,
+			//if rf.pastElectionTimeout() {
+			//	rf.StartElection()
+			//}
 		case Candidate:
-			DPrintf(111, "I am %d, a Candidate with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
-
+			//DPrintf(111, "I am %d, a Candidate with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
 			if rf.pastElectionTimeout() { //#A
 				rf.StartElection()
 			} //#C
@@ -574,7 +579,7 @@ func (rf *Raft) ticker() {
 			rf.StartAppendEntries(isHeartbeat)
 		}
 
-		rf.mu.Unlock()
+		//rf.mu.Unlock()
 		time.Sleep(tickInterval)
 	}
 	DPrintf(111, "tim")
