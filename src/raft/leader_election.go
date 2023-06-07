@@ -11,10 +11,8 @@ const baseElectionTimeout = 300
 const None = -1
 
 func (rf *Raft) StartElection() {
-	if rf.killed() {
-		DPrintf(111, "%v: I am killed!!!!!", rf.SayMeL())
-		return
-	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
@@ -36,12 +34,17 @@ func (rf *Raft) StartElection() {
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok || !reply.VoteGranted {
-				DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
-			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
+
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
+			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
+
+			if term != reply.Term {
+				return
+			}
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -61,6 +64,8 @@ func (rf *Raft) StartElection() {
 }
 
 func (rf *Raft) pastElectionTimeout() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	return time.Since(rf.lastElection) > rf.electionTimeout
 }
 
@@ -127,6 +132,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.currentTerm = args.Term
 		rf.votedFor = None
 		rf.state = Follower
+		reply.Term = rf.currentTerm
 	}
 	DPrintf(500, "%v: reply to %v myLastLogterm=%v myLastLogIndex=%v args.LastLogTerm=%v args.LastLogIndex=%v\n",
 		rf.SayMeL(), args.CandidateId, rf.getLastEntryTerm(), rf.log.LastLogIndex, args.LastLogTerm, args.LastLogIndex)
