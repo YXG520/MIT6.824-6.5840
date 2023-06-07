@@ -11,10 +11,7 @@ const baseElectionTimeout = 300
 const None = -1
 
 func (rf *Raft) StartElection() {
-	if rf.killed() {
-		DPrintf(111, "%v: I am killed!!!!!", rf.SayMeL())
-		return
-	}
+
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
@@ -36,6 +33,10 @@ func (rf *Raft) StartElection() {
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok || !reply.VoteGranted {
 				DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				return
+			}
+			if reply.Term < rf.currentTerm {
+				DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
 				return
 			}
 			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
@@ -116,14 +117,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	reply.VoteGranted = true // 默认设置响应体为投同意票状态
-	reply.Term = rf.currentTerm
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
+
 		return
 	}
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
+		reply.Term = rf.currentTerm
+
 		rf.votedFor = None
 		rf.state = Follower
 	}
