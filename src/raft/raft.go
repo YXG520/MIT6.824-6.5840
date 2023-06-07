@@ -418,7 +418,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			return
 		}
 		rf.mu.Lock()
-		//defer rf.mu.Unlock()
+		defer rf.mu.Unlock()
 		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
@@ -444,7 +444,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		if reply.PrevLogIndex+1 < rf.log.FirstLogIndex {
 			return
 		}
-		rf.mu.Unlock()
+		//rf.mu.Unlock()
 		if reply.PrevLogIndex > rf.log.LastLogIndex {
 			rf.peerTrackers[targetServerId].nextIndex = rf.log.LastLogIndex + 1
 		} else if rf.getEntryTerm(reply.PrevLogIndex) == reply.PrevLogTerm {

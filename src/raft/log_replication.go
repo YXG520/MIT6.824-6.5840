@@ -180,8 +180,8 @@ func (rf *Raft) tryCommitL(matchIndex int) {
 	}
 	//DPrintf(2, "%v: rf.commitIndex = %v ,trycommitindex=%v,matchindex=%v cnt=%v", rf.SayMeL(), rf.commitIndex, index, rf.matchIndex, cnt)
 	// 超过半数就提交
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	if cnt > len(rf.peers)/2 {
 		rf.commitIndex = matchIndex
 		if rf.commitIndex > rf.log.LastLogIndex {
