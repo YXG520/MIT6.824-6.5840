@@ -157,7 +157,6 @@ func (rf *Raft) funcB() {
 }
 ```
 
-
 > 在这种情况下，如果 Term 变量可能会被 funcB 和
 > funcA 方法修改，并且这两个方法都在自己的协程中运行，这
 > 可能会引发并发问题，特别是数据竞争。这是因为在 funcB 方法中，你
@@ -240,3 +239,51 @@ func (rf *Raft) funcB() {
 > 要么是执行 funcB 的协程）可以访问和修改 Term。然而，这并不能保证 Term 的最终值，
 > 因为 funcA 和 funcB 的执行顺序依然是不确定的。如果你需要确定 Term 的最终值
 > ，你需要使用其他的同步机制，如条件变量或通道。
+
+## 场景四 方法调用时导致的死锁
+
+1 下面调用funcB时候会导致死锁，因为funcA在执行方法funcB的线程里，相当于单线程调用，
+因为rf.mu.Lock()是不可重入的，所以当路径走到rf.funcA()的时候就死锁了
+```go
+func (rf *Raft) funcA() {
+    rf.mu.Lock()
+    rf.Term = 1
+    rf.mu.Unlock()
+}
+
+func (rf *Raft) funcB() {
+    rf.mu.Lock()
+    rf.funcA()
+    rf.Term = 2
+    rf.mu.Unlock()
+}
+```
+2 解决方案1: 去掉funcA的锁，调用funcB就能正常执行了，但是如果有其他协程想调用funcA，则还是
+可能产生数据竞争问题，
+```go
+func (rf *Raft) funcA() {
+    rf.Term = 1
+}
+
+func (rf *Raft) funcB() {
+    rf.mu.Lock()
+    rf.funcA()
+    rf.Term = 2
+    rf.mu.Unlock()
+}
+```
+3  解决方案2: 调用方法funcA时选择再开一个协程，这样在funcA里就能使用锁
+```go
+func (rf *Raft) funcA() {
+    rf.mu.Lock()
+    rf.Term = 1
+    rf.mu.Unlock()
+}
+
+func (rf *Raft) funcB() {
+    rf.mu.Lock()
+    go rf.funcA()
+    rf.Term = 2
+    rf.mu.Unlock()
+}
+```
