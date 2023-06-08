@@ -278,7 +278,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
-	DPrintf(111, "%v : is killed!!", rf.SayMeL())
 
 	// Your code here, if desired.
 	rf.mu.Lock()
