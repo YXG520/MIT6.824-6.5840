@@ -579,18 +579,18 @@ func TestBackup2B(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
-	DPrintf(11, "%v : refuse all, good!\n", cfg.rafts[leader1].SayMeL())
+	//DPrintf(11, "%v : refuse all, good!\n", cfg.rafts[leader1].SayMeL())
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers // 另一个从节点
 	}
-	DPrintf(11, "%v : checkOneLeader!!!\n", cfg.rafts[leader2].SayMeL())
+	//DPrintf(11, "%v : checkOneLeader!!!\n", cfg.rafts[leader2].SayMeL())
 
 	cfg.disconnect(other) // 下线另一个从节点
 
-	DPrintf(11, "%v: 1 follower is done now !!!！ and the raft is going to be added new items...\n", cfg.rafts[other].SayMeL())
+	//DPrintf(11, "%v: 1 follower is done now !!!！ and the raft is going to be added new items...\n", cfg.rafts[other].SayMeL())
 	// lots more commands that won't commit
 	for i := 0; i < 50; i++ {
 		cfg.rafts[leader2].Start(rand.Int())

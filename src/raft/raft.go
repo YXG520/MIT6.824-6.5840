@@ -612,8 +612,8 @@ func (rf *Raft) NewTermL(term int) {
 }
 
 func (rf *Raft) SayMeL() string {
-	//return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
-	return "success"
+	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	//return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
