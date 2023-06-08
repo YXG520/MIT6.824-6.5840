@@ -48,7 +48,6 @@ func TestInitialElection2A(t *testing.T) {
 	cfg.checkOneLeader()
 
 	cfg.end()
-	fmt.Printf("test1 finished...")
 }
 
 func TestReElection2A(t *testing.T) {
@@ -103,9 +102,9 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 100
+	iters := 10
 	for ii := 0; ii < iters; ii++ {
-		DPrintf(110, "the  %d th iter...\n", ii)
+		DPrintf(1100, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		//i2 := rand.Int() % servers

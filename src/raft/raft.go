@@ -157,9 +157,11 @@ func (rf *Raft) GetState() (int, bool) {
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
 func (rf *Raft) persist() {
+
 	// Your code here (2C).
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
+
 	e.Encode(rf.currentTerm) // 持久化任期
 	e.Encode(rf.votedFor)    // 持久化votedFor
 	e.Encode(rf.log)         // 持久化日志
@@ -174,6 +176,8 @@ func (rf *Raft) persist() {
 
 // restore previously persisted state.
 func (rf *Raft) readPersist() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	stateData := rf.persister.ReadRaftState()
 	if stateData == nil || len(stateData) < 1 { // bootstrap without any state?
 		return
@@ -191,6 +195,7 @@ func (rf *Raft) readPersist() {
 			panic("")
 		}
 	}
+
 	rf.snapshot = rf.persister.ReadSnapshot() // 这里持久化的时候只是将快照继续读取下来
 	rf.commitIndex = rf.snapshotLastIncludeIndex
 	rf.lastApplied = rf.snapshotLastIncludeIndex
@@ -209,7 +214,7 @@ type RequestInstallSnapShotReply struct {
 	Term int
 }
 
-// example code to send a RequestVote RPC to a server.
+// example code to send a RequestVoteRPC to a server.
 // server is the index of the target server in rf.peers[].
 // expects RPC arguments in args.
 // fills in *reply with RPC reply, so caller should
@@ -372,7 +377,6 @@ func (rf *Raft) Kill() {
 
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead) // 这里的kill仅仅将对应的字段置为1
-	DPrintf(1, "%v:是否死亡呢?%v", rf.SayMeL(), z == 1)
 	return z == 1
 }
 
@@ -476,9 +480,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-	if rf.state != Leader {
-		return
-	}
 	// 并行向其他节点发送心跳或者日志，让他们知道此刻已经有一个leader产生
 	//DPrintf(111, "%v: detect the len of peers: %d", rf.SayMeL(), len(rf.peers))
 	for i, _ := range rf.peers {
@@ -493,22 +494,25 @@ func (rf *Raft) StartAppendEntries(heart bool) {
 
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
-	//rf.mu.Lock()
-	//defer rf.mu.Unlock()
-	if rf.state != Leader {
-		return
-	}
+	rf.mu.Lock()
+	rf.resetElectionTimer()
+	rf.mu.Unlock()
+
 	if heart {
+		rf.mu.Lock()
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		args.LeaderTerm = rf.currentTerm
 		DPrintf(111, "\n %d is a leader with term %d, ready sending heartbeart to follower %d....", rf.me, rf.currentTerm, targetServerId)
+		rf.mu.Unlock()
+
 		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
-		rf.resetElectionTimer()
 		// 发送心跳包
 		return
 	} else {
 		args := RequestAppendEntriesArgs{}
+		rf.mu.Lock()
+
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
 			DPrintf(111, "此时 %d 节点的nextIndex为%d,LastLogIndex为 %d, 最后一项日志为：\n", rf.me, rf.peerTrackers[rf.me].nextIndex,
@@ -534,12 +538,16 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		reply := RequestAppendEntriesReply{}
 		DPrintf(111, "%v: the len of append log entries: %d is ready to send to node %d!!! and the entries are %v\n",
 			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
+		rf.mu.Unlock()
 
 		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
 		if !ok {
-			DPrintf(111, "%v: cannot request AppendEntries to %v args.term=%v\n", rf.SayMeL(), targetServerId, args.LeaderTerm)
+			//DPrintf(111, "%v: cannot request AppendEntries to %v args.term=%v\n", rf.SayMeL(), targetServerId, args.LeaderTerm)
 			return
 		}
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+
 		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
@@ -604,7 +612,8 @@ func (rf *Raft) NewTermL(term int) {
 }
 
 func (rf *Raft) SayMeL() string {
-	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	//return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
@@ -682,16 +691,17 @@ func (rf *Raft) ticker() {
 	// 如果这个raft节点没有掉线,则一直保持活跃不下线状态（可以因为网络原因掉线，也可以tester主动让其掉线以便测试）
 	for !rf.killed() {
 		rf.mu.Lock()
-		switch rf.state {
+		state := rf.state
+		rf.mu.Unlock()
+		switch state {
 		case Follower:
-			DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
-			//fallthrough // 相当于执行#A到#C代码块,
-			if rf.pastElectionTimeout() {
-				rf.StartElection()
-			}
+			//DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
+			fallthrough // 相当于执行#A到#C代码块,
+			//if rf.pastElectionTimeout() {
+			//	rf.StartElection()
+			//}
 		case Candidate:
-			DPrintf(111, "I am %d, a Candidate with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
-
+			//DPrintf(111, "I am %d, a Candidate with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
 			if rf.pastElectionTimeout() { //#A
 				rf.StartElection()
 			} //#C
@@ -709,7 +719,6 @@ func (rf *Raft) ticker() {
 			rf.StartAppendEntries(isHeartbeat)
 		}
 
-		rf.mu.Unlock()
 		time.Sleep(tickInterval)
 	}
 	DPrintf(111, "tim")

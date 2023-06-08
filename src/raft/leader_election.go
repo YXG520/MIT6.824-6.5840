@@ -11,7 +11,8 @@ const baseElectionTimeout = 300
 const None = -1
 
 func (rf *Raft) StartElection() {
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
@@ -32,17 +33,18 @@ func (rf *Raft) StartElection() {
 			var reply RequestVoteReply
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
-			if reply.Term != rf.currentTerm {
-				DPrintf(111, "%v: 与该RequestVote rpc的响应(任期为%d)不在一个任期，拒绝", rf.SayMeL(), reply.Term)
-				return
-			}
 			if !ok || !reply.VoteGranted {
-				DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
-			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
+			if reply.Term != term {
+				//DPrintf(111, "%v: 与该RequestVote rpc的响应(任期为%d)不在一个任期，拒绝", rf.SayMeL(), reply.Term)
+				return
+			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
+			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
+
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -54,19 +56,17 @@ func (rf *Raft) StartElection() {
 				DPrintf(111, "%v:自身状态已变为%d，拒绝变为leader。", rf.SayMeL(), rf.state)
 				return
 			}
-			//if rf.currentTerm != term {
-			//	DPrintf(111, "%v:自身状态已改变，拒绝变为leader。")
-			//	return
-			//}
-			//rf.state = Leader // 将自身设置为leader
+
 			rf.becomeLeader()
 			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
-			//rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
+			go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 		}(i)
 	}
 }
 
 func (rf *Raft) pastElectionTimeout() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	return time.Since(rf.lastElection) > rf.electionTimeout
 }
 
