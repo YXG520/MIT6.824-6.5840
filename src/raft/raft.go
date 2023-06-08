@@ -159,16 +159,19 @@ func (rf *Raft) persist() {
 	e.Encode(rf.votedFor)    // 持久化votedFor
 	e.Encode(rf.log)         // 持久化日志
 	data := w.Bytes()
-	rf.persister.SaveRaftState(data)
+	go rf.persister.SaveRaftState(data)
 	DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
 }
 
 // restore previously persisted state.
 func (rf *Raft) readPersist() {
+
 	stateData := rf.persister.ReadRaftState()
 	if stateData == nil || len(stateData) < 1 { // bootstrap without any state?
 		return
 	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	// Your code here (2C).
 	if stateData != nil && len(stateData) > 0 { // bootstrap without any state?
 		r := bytes.NewBuffer(stateData)
@@ -181,7 +184,6 @@ func (rf *Raft) readPersist() {
 			DPrintf(999, "%v: readPersist decode error\n", rf.SayMeL())
 			panic("")
 		}
-
 	}
 }
 
@@ -401,7 +403,6 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 				rf.log.LastLogIndex)
 			return
 		}
-
 		args.LeaderTerm = rf.currentTerm
 		args.LeaderId = rf.me
 		args.LeaderCommit = rf.commitIndex
@@ -472,6 +473,7 @@ func (rf *Raft) NewTermL(term int) {
 
 func (rf *Raft) SayMeL() string {
 	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	//return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
@@ -548,7 +550,7 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 		switch state {
 		case Follower:
-			DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
+			//DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)
 			fallthrough // 相当于执行#A到#C代码块,
 			//if rf.pastElectionTimeout() {
 			//	rf.StartElection()
