@@ -18,7 +18,6 @@ package raft
 //
 
 import (
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -257,11 +256,11 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-	rf.resetElectionTimer()
 	// 所有节点共享同一份request参数
 	args := RequestAppendEntriesArgs{}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	rf.resetElectionTimer()
 	args.LeaderTerm = rf.currentTerm
 	args.LeaderId = rf.me
 	// 并行向其他节点发送心跳，让他们知道此刻已经有一个leader产生
@@ -309,30 +308,20 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool, args *RequestAppen
 
 	reply := RequestAppendEntriesReply{}
 	rf.mu.Lock()
-	if rf.state != Leader {
-		return
-	}
+
 	DPrintf(111, "%v: is ready to send heartbeat to %d", rf.SayMeL(), targetServerId)
 	rf.mu.Unlock()
 
 	if heart {
 		rf.sendRequestAppendEntries(targetServerId, args, &reply)
-		//ok := rf.sendRequestAppendEntries(targetServerId, &args, &reply)
-		//rf.mu.Lock()
-		//if !ok {
-		//	return
-		//}
-		//if reply.FollowerTerm > rf.currentTerm {
-		//	rf.currentTerm = reply.FollowerTerm
-		//	rf.mu.Unlock()
-		//	rf.ToFollower()
-		//}
+
 	}
 
 }
 func (rf *Raft) SayMeL() string {
 
-	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	//return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	return "success"
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -374,8 +363,6 @@ func (rf *Raft) ticker() {
 		switch state {
 		case Follower:
 			if rf.pastElectionTimeout() { //#A
-				rf.resetElectionTimer()
-				rf.becomeCandidate()
 				rf.StartElection()
 			} //#C
 		case Candidate:
@@ -388,14 +375,14 @@ func (rf *Raft) ticker() {
 			//	break
 			//}
 			// 只有Leader节点才能发送心跳和日志给从节点
-			//isHeartbeat := false
-			//// 检测是需要发送单纯的心跳还是发送日志
-			//// 心跳定时器过期则发送心跳，否则发送日志
-			//if rf.pastHeartbeatTimeout() {
-			//	isHeartbeat = true
-			//	rf.resetHeartbeatTimer()
-			//}
-			//rf.StartAppendEntries(isHeartbeat)
+			isHeartbeat := false
+			// 检测是需要发送单纯的心跳还是发送日志
+			// 心跳定时器过期则发送心跳，否则发送日志
+			if rf.pastHeartbeatTimeout() {
+				isHeartbeat = true
+				rf.resetHeartbeatTimer()
+			}
+			rf.StartAppendEntries(isHeartbeat)
 
 		}
 
