@@ -1163,7 +1163,7 @@ func TestUnreliableChurn2C(t *testing.T) {
 const MAXLOGSIZE = 2000
 
 func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
-	iters := 5
+	iters := 20
 	servers := 3
 	cfg := make_config(t, servers, !reliable, true)
 	defer cfg.cleanup()
@@ -1174,7 +1174,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 	leader1 := cfg.checkOneLeader()
 	DPrintf(111, "check one leader successfully!")
 	for i := 0; i < iters; i++ {
-		DPrintf(111, "the %d th iter begins...", i)
+		DPrintf(111, "this is the %d th iter", i)
 		victim := (leader1 + 1) % servers
 		sender := leader1
 		if i%3 == 1 {
@@ -1182,7 +1182,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			victim = leader1
 		}
 		if disconnect {
-			DPrintf(111, "begin deliberately disconnect one node....")
+			DPrintf(111, "begin deliberately disconnect one node %d....", victim)
 
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
@@ -1196,7 +1196,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		// send enough logs to the leader node to get a snapshot
-		DPrintf(111, "send enough logs to the leader node to get a snapshot....")
+		DPrintf(111, "send enough logs from the state machine to the leader node %d to get a snapshot....", leader1)
 
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 		for i := 0; i < nn; i++ {
@@ -1210,19 +1210,23 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			// TestSnapshotBasic2D().
 			cfg.one(rand.Int(), servers, true)
 		} else {
-			DPrintf(111, "with one node to crash or disconnect, now testing if two nodes has a leader and converge in logs...")
+			DPrintf(111, "with one node to crash or disconnect and after installing snapshots, now testing if two nodes has a leader and converge in logs...")
 			cfg.one(rand.Int(), servers-1, true)
+			DPrintf(111, "after installing snapshots, checking successfully...")
 		}
 
 		if cfg.LogSize() >= MAXLOGSIZE {
 			cfg.t.Fatalf("Log size too large")
 		}
 		if disconnect {
+			DPrintf(111, "reconnect the follower %d, who maybe behind and needs to receive a snapshot to catch up", victim)
 			// reconnect a follower, who maybe behind and
 			// needs to rceive a snapshot to catch up.
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
+			DPrintf(111, "check the reconnected node catch up with the leader's log.")
 			leader1 = cfg.checkOneLeader()
+			DPrintf(111, "now check the node %d elected as new leader", leader1)
 		}
 
 		if crash {
