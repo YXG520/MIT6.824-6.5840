@@ -302,9 +302,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-	//if rf.state != Leader {
-	//	return
-	//}
+
 	// 并行向其他节点发送心跳或者日志，让他们知道此刻已经有一个leader产生
 	//DPrintf(111, "%v: detect the len of peers: %d", rf.SayMeL(), len(rf.peers))
 	for i, _ := range rf.peers {
