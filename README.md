@@ -964,3 +964,16 @@ ok      MIT6.824-6.5840/raft    44.074s
 > 主从节点提交日志之后，就可以应用状态机了，但是主从节点的日志提交条件是不同的
 ，就具体的代码来说，主结点的commitIndex更新依赖于各个节点对应的matchIndex，
 而从节点的commitIndex更新依赖于主节点的commitIndex
+
+## raft集群中多数节点断联后，raft系统中的leader还能接收写和读操作吗？
+
+1 在大多数节点不包括leader节点下线但时，raft系统中的leader还能接收写和读操作吗
+
+![images/img28.png](images/img28.png)
+
+2 但是MIT6.824的lab2作业中好像是允许leader继续接收日志的
+![images/img_30.png](images/img_30.png)
+
+3 包括leader的情况下，过半节点下线，raft系统中还能接收写和读操作吗
+
+![images/img_29.png](images/img_29.png)
