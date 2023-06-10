@@ -43,6 +43,27 @@ MIT6.5840(also early called 6.824) Distributed System in Spring 2023
 
 ![img_4.png](src/images/img_4.png)
 
+## 1.6 如果一个集群多数从节点形成另一个网络分区，此时集群中有可能会出现两个leader吗？
+> 两个leader的可能性: 在Raft算法中，**出现两个leader在同一个term（任期）**是不
+> 可能的。Raft算法的设计确保在任意给定的term中，最多只有一个leader。然而，在
+> 网络分区（网络分裂）的情况下，一个新的term可能开始，并且在另一侧的网络分区中选举新的leader。这时，集群可能会暂时有两个leader，但它们处于不同的term中。一旦网络分区解除，较旧的leader将会发现新的term，并转变为follower状态。在此过程中，Raft保证了系统的一致性。
+
+## 1.7 对于raft系统，状态机是不是应该实时监测leader的变化?
+> 在Raft系统中，状态机通常不需要实时监测leader的变化。状态机的
+> 主要职责是处理和应用由Raft日志提交的命令。Raft的leader选举和日志复
+> 制是通过Raft算法内部管理的。通常，客户端和状态机不需要直接关心谁是leader，
+> 因为Raft库/服务会处理leader的变化，并在必要时重定向请求到当前的leader
+> 。然而，根据具体的系统设计和需求，某些应用程序可能希望监听leader变化以执行
+> 特定的操作。这种情况下，可以通过监控Raft算法的元数据来实现。
+
+## 1.8 网络分区导致出现的两个leader问题，选择一个leader写日志的时候要如何识别?
+
+![img8.png](src/images/img_8.png)
+
+## 1.9 redis sentinel集群内部如何保持一致性的，使用了raft吗
+
+![img.png](src/images/img_9.png)
+
 #  2 Lab2A - Leader Election
 本Lab2A经过了总共1000次的测试操作，0bug，所以大家可以放心参考
 
