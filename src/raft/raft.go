@@ -286,9 +286,10 @@ func (rf *Raft) RequestAppendEntries(args *RequestAppendEntriesArgs, reply *Requ
 		return
 	}
 	rf.mu.Unlock()
-	rf.resetElectionTimer()
-	DPrintf(111, "reset self electionTimer ")
+	//DPrintf(111, "reset self electionTimer ")
 	rf.mu.Lock()
+	rf.resetElectionTimer()
+
 	rf.state = Follower
 
 	// 需要转变自己的身份为Follower
@@ -362,13 +363,17 @@ func (rf *Raft) ticker() {
 		//rf.mu.Lock()
 		switch state {
 		case Follower:
+			//if rf.pastElectionTimeout() { //#A
+			//	rf.StartElection()
+			//} //#C
+			fallthrough
+		case Candidate:
 			if rf.pastElectionTimeout() { //#A
 				rf.StartElection()
 			} //#C
-		case Candidate:
-			if rf.pastElectionTimeout() {
-				rf.ToFollower()
-			}
+			//if rf.pastElectionTimeout() {
+			//	rf.ToFollower()
+			//}
 		case Leader:
 			//if !rf.quorumActive() {
 			//	// 如果票数不够需要转变为follower

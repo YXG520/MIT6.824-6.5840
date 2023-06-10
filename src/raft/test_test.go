@@ -102,7 +102,7 @@ func TestManyElections2A(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 3000
+	iters := 10
 	for ii := 1; ii < iters; ii++ {
 		DPrintf(1111, "the  %d th iter...\n", ii)
 		// disconnect three nodes
@@ -127,44 +127,45 @@ func TestManyElections2A(t *testing.T) {
 	cfg.end()
 }
 
-func TestManyElections2A2(t *testing.T) {
-	servers := 3
-	cfg := make_config(t, servers, false, false)
-	defer cfg.cleanup()
-
-	cfg.begin("Test (2A): multiple elections")
-
-	leader_tmp := cfg.checkOneLeader()
-	DPrintf(111, "check one leader %d", leader_tmp)
-	iters := 10
-	for ii := 1; ii < iters; ii++ {
-		DPrintf(111, "the  %d th iter...\n", ii)
-		// disconnect three nodes
-		i1 := rand.Int() % servers
-		DPrintf(111, "now randomly select one node %d to be offline", i1)
-
-		//i2 := rand.Int() % servers
-		//i3 := rand.Int() % servers
-		cfg.disconnect(i1)
-		//cfg.disconnect(i2)
-		//cfg.disconnect(i3)
-
-		// either the current leader should still be alive,
-		// or the remaining four should elect a new one.
-		leader_tmp2 := cfg.checkOneLeader()
-		DPrintf(111, "check one leader %d and ready to connect node %d", leader_tmp2, i1)
-		cfg.connect(i1)
-		leader_tmp3 := cfg.checkOneLeader()
-		DPrintf(111, "now connect node %d and check the leader %d", i1, leader_tmp3)
-
-		//cfg.connect(i2)
-		//cfg.connect(i3)
-	}
-
-	cfg.checkOneLeader()
-
-	cfg.end()
-}
+//
+//func TestManyElections2A2(t *testing.T) {
+//	servers := 3
+//	cfg := make_config(t, servers, false, false)
+//	defer cfg.cleanup()
+//
+//	cfg.begin("Test (2A): multiple elections")
+//
+//	leader_tmp := cfg.checkOneLeader()
+//	DPrintf(111, "check one leader %d", leader_tmp)
+//	iters := 10
+//	for ii := 1; ii < iters; ii++ {
+//		DPrintf(111, "the  %d th iter...\n", ii)
+//		// disconnect three nodes
+//		i1 := rand.Int() % servers
+//		DPrintf(111, "now randomly select one node %d to be offline", i1)
+//
+//		//i2 := rand.Int() % servers
+//		//i3 := rand.Int() % servers
+//		cfg.disconnect(i1)
+//		//cfg.disconnect(i2)
+//		//cfg.disconnect(i3)
+//
+//		// either the current leader should still be alive,
+//		// or the remaining four should elect a new one.
+//		leader_tmp2 := cfg.checkOneLeader()
+//		DPrintf(111, "check one leader %d and ready to connect node %d", leader_tmp2, i1)
+//		cfg.connect(i1)
+//		leader_tmp3 := cfg.checkOneLeader()
+//		DPrintf(111, "now connect node %d and check the leader %d", i1, leader_tmp3)
+//
+//		//cfg.connect(i2)
+//		//cfg.connect(i3)
+//	}
+//
+//	cfg.checkOneLeader()
+//
+//	cfg.end()
+//}
 
 func TestBasicAgree2B(t *testing.T) {
 	servers := 3

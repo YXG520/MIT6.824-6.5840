@@ -126,10 +126,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = args.CandidateId
 		rf.state = Follower
 		//rf.mu.Unlock()
-		//rf.resetElectionTimer()  //自己的票已经投出时就转为follower状态
-		electionTimeout := baseElectionTimeout + (rand.Int63() % baseElectionTimeout)
-		rf.electionTimeout = time.Duration(electionTimeout) * time.Millisecond
-		rf.lastElection = time.Now()
+		rf.resetElectionTimer() //自己的票已经投出时就转为follower状态
+		//electionTimeout := baseElectionTimeout + (rand.Int63() % baseElectionTimeout)
+		//rf.electionTimeout = time.Duration(electionTimeout) * time.Millisecond
+		//rf.lastElection = time.Now()
 		reply.VoteGranted = true // 默认设置响应体为投同意票状态
 		DPrintf(111, "%v: 同意把票投给%d, 它的任期是%d", rf.SayMeL(), args.CandidateId, args.Term)
 		//rf.mu.Lock()
