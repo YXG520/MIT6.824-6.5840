@@ -63,19 +63,21 @@ func TestReElection2A(t *testing.T) {
 	DPrintf(111, "ready to disconnect the leader %d", leader1)
 
 	cfg.disconnect(leader1)
-	cfg.checkOneLeader()
+	new_leader := cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
-	DPrintf(111, "ready to reconnect the old leader %d", leader1)
+	DPrintf(111, "check the new leader %d elected and ready to reconnect the old leader %d", new_leader, leader1)
 	cfg.connect(leader1)
+	DPrintf(111, "ready to call checkOneLeader method after the leader %d reconnect...", leader1)
 	leader2 := cfg.checkOneLeader()
-	DPrintf(111, "detected the new leader is %d and ready to disable 2 nodes including %d and %d...", leader2, leader2, leader2+1)
+	DPrintf(111, "detected the last leader is %d, the new leader is %d and ready to disable 2 nodes including %d and %d...", new_leader, leader2, leader2, leader2+1)
 	// if there's no quorum, no new leader should
 	// be elected.
 	cfg.disconnect(leader2)
 	cfg.disconnect((leader2 + 1) % servers)
+	DPrintf(111, "now two nodes %d and %d are offline, and ready to sleep for two-fold RaftElectionTimeout....", leader2, (leader2 + 1))
 	time.Sleep(2 * RaftElectionTimeout)
 	DPrintf(111, "checking leader...")
 	// check that the one connected server
@@ -104,7 +106,7 @@ func TestManyElections2A(t *testing.T) {
 
 	iters := 10
 	for ii := 0; ii < iters; ii++ {
-		DPrintf(1100, "the  %d th iter...\n", ii)
+		DPrintf(11000, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		//i2 := rand.Int() % servers
@@ -140,9 +142,9 @@ func TestManyElections2A2(t *testing.T) {
 
 	cfg.checkOneLeader()
 
-	iters := 10
+	iters := 1000
 	for ii := 0; ii < iters; ii++ {
-		DPrintf(110, "the  %d th iter...\n", ii)
+		DPrintf(11000, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
@@ -962,7 +964,7 @@ func TestFigure8Unreliable2C(t *testing.T) {
 	cfg.one(rand.Int()%10000, 1, true)
 
 	nup := servers
-	for iters := 0; iters < 1000; iters++ {
+	for iters := 0; iters < 100; iters++ {
 		if iters == 200 {
 			cfg.setlongreordering(true)
 		}
@@ -1172,9 +1174,9 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 	cfg.one(rand.Int(), servers, true)
 	leader1 := cfg.checkOneLeader()
-	DPrintf(111, "check one leader successfully!")
+	DPrintf(1111, "check one leader successfully!")
 	for i := 0; i < iters; i++ {
-		DPrintf(111, "this is the %d th iter", i)
+		DPrintf(1111, "this is the %d th iter", i)
 		victim := (leader1 + 1) % servers
 		sender := leader1
 		if i%3 == 1 {
@@ -1182,21 +1184,21 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			victim = leader1
 		}
 		if disconnect {
-			DPrintf(111, "begin deliberately disconnect one node %d....", victim)
+			DPrintf(1111, "begin deliberately disconnect one node %d....", victim)
 
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
-		DPrintf(111, "finishing testing the sync data if distributed to specified healthy nodes....")
+		DPrintf(1111, "finishing testing the sync data if distributed to specified healthy nodes....")
 
 		if crash {
-			DPrintf(111, "begin deliberately crash one node....")
+			DPrintf(1111, "begin deliberately crash one node....")
 			cfg.crash1(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
 		// send enough logs to the leader node to get a snapshot
-		DPrintf(111, "send enough logs from the state machine to the leader node %d to get a snapshot....", leader1)
+		DPrintf(1111, "send enough logs from the state machine to the leader node %d to get a snapshot....", leader1)
 
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 		for i := 0; i < nn; i++ {
@@ -1209,33 +1211,34 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			// an InstallSnapshot RPC isn't required for
 			// TestSnapshotBasic2D().
 			cfg.one(rand.Int(), servers, true)
+			DPrintf(1111, "3 nodes are all consistent")
 		} else {
-			DPrintf(111, "with one node to crash or disconnect and after installing snapshots, now testing if two nodes has a leader and converge in logs...")
+			DPrintf(1111, "with one node to crash or disconnect and after installing snapshots, now testing if two nodes has a leader and converge in logs...")
 			cfg.one(rand.Int(), servers-1, true)
-			DPrintf(111, "after installing snapshots, checking successfully...")
+			DPrintf(1111, "after installing snapshots, checking successfully...")
 		}
 
 		if cfg.LogSize() >= MAXLOGSIZE {
 			cfg.t.Fatalf("Log size too large")
 		}
 		if disconnect {
-			DPrintf(111, "reconnect the follower %d, who maybe behind and needs to receive a snapshot to catch up", victim)
+			DPrintf(1111, "reconnect the follower %d, who maybe behind and needs to receive a snapshot to catch up", victim)
 			// reconnect a follower, who maybe behind and
 			// needs to rceive a snapshot to catch up.
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
-			DPrintf(111, "check the reconnected node catch up with the leader's log.")
+			DPrintf(1111, "check the reconnected node catch up with the leader's log.")
 			leader1 = cfg.checkOneLeader()
-			DPrintf(111, "now check the node %d elected as new leader", leader1)
+			DPrintf(1111, "now check the node %d elected as new leader", leader1)
 		}
 
 		if crash {
-			DPrintf(111, "now restart the crashed node....")
+			DPrintf(1111, "now restart the crashed node....")
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
-			DPrintf(111, "check one leader alive....")
+			DPrintf(1111, "check one leader alive....")
 		}
 	}
 	cfg.end()

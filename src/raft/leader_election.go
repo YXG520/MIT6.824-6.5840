@@ -37,12 +37,14 @@ func (rf *Raft) StartElection() {
 				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
-			if reply.Term != term {
+
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+			// 丢弃旧选票
+			if reply.Term < rf.currentTerm {
 				//DPrintf(111, "%v: 与该RequestVote rpc的响应(任期为%d)不在一个任期，拒绝", rf.SayMeL(), reply.Term)
 				return
 			}
-			rf.mu.Lock()
-			defer rf.mu.Unlock()
 			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
 
 			// 统计票数
@@ -56,7 +58,6 @@ func (rf *Raft) StartElection() {
 				DPrintf(111, "%v:自身状态已变为%d，拒绝变为leader。", rf.SayMeL(), rf.state)
 				return
 			}
-
 			rf.becomeLeader()
 			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
 			go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
@@ -99,6 +100,8 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 	reply.FollowerTerm = rf.currentTerm
 	reply.Success = true
 	// 旧任期的leader抛弃掉
+	DPrintf(111, "%v: receiving heartbeat of leader %d with term %d and deciding if absorbing it....", rf.SayMeL(),
+		args.LeaderId, args.LeaderTerm)
 	if args.LeaderTerm < rf.currentTerm {
 		reply.Success = false
 		return
@@ -112,6 +115,7 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
+		reply.FollowerTerm = rf.currentTerm
 	}
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 }
@@ -156,7 +160,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	} else {
 		reply.VoteGranted = false
 		DPrintf(111, "%v: 投出反对票给节点%d。 votedFor:%d, update: %v, \nargs.LastLogTerm > rf.getLastEntryTerm():%v,"+
-			" args.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex: %v, "+
+			" \nargs.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex: %v, "+
 			" \nargs.LastLogIndex：%d, rf.log.LastLogIndex：%d", rf.SayMeL(), args.CandidateId, rf.votedFor, update, args.LastLogTerm > rf.getLastEntryTerm(),
 			args.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex, args.LastLogIndex, rf.log.LastLogIndex)
 	}

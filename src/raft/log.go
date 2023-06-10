@@ -49,12 +49,12 @@ func (log *Log) String() string {
 func (log *Log) empty() bool {
 	return log.FirstLogIndex > log.LastLogIndex
 }
+
 func (rf *Raft) getEntryTerm(index int) int {
 	if index == 0 {
 		return 0
 	}
 	if index == rf.log.FirstLogIndex-1 {
-		// 如果
 		return rf.snapshotLastIncludeTerm
 	}
 	if rf.log.FirstLogIndex <= rf.log.LastLogIndex {

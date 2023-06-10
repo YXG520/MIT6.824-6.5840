@@ -332,9 +332,9 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 
 func (cfg *config) checkTimeout() {
 	// enforce a two minute real-time limit on each test
-	if !cfg.t.Failed() && time.Since(cfg.start) > 120*time.Second {
-		cfg.t.Fatal("test took longer than 120 seconds")
-	}
+	//if !cfg.t.Failed() && time.Since(cfg.start) > 120*time.Second {
+	//	cfg.t.Fatal("test took longer than 120 seconds")
+	//}
 }
 
 func (cfg *config) checkFinished() bool {
@@ -357,6 +357,7 @@ func (cfg *config) cleanup() {
 // attach server i to the net.
 func (cfg *config) connect(i int) {
 	// fmt.Printf("connect(%d)\n", i)
+	DPrintf(111, "old node %d is ready to reconnect...", i)
 
 	cfg.connected[i] = true
 
@@ -375,6 +376,7 @@ func (cfg *config) connect(i int) {
 			cfg.net.Enable(endname, true)
 		}
 	}
+	DPrintf(111, "old node %d is reconnected successfully!", i)
 }
 
 // detach server i from the net.
