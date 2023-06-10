@@ -187,7 +187,7 @@ func (rf *Raft) readPersist() {
 	}
 }
 
-// example code to send a RequestVote RPC to a server.
+// example code to send a RequestVoteRPC to a server.
 // server is the index of the target server in rf.peers[].
 // expects RPC arguments in args.
 // fills in *reply with RPC reply, so caller should
@@ -303,7 +303,11 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.state != Leader {
+		return
+	}
 	// 并行向其他节点发送心跳或者日志，让他们知道此刻已经有一个leader产生
 	//DPrintf(111, "%v: detect the len of peers: %d", rf.SayMeL(), len(rf.peers))
 	for i, _ := range rf.peers {
@@ -386,6 +390,9 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		rf.mu.Lock()
+		if rf.state != Leader {
+			return
+		}
 		args.LeaderTerm = rf.currentTerm
 		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
 		rf.mu.Unlock()
@@ -395,7 +402,9 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	} else {
 		args := RequestAppendEntriesArgs{}
 		rf.mu.Lock()
-
+		if rf.state != Leader {
+			return
+		}
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
 			DPrintf(111, "此时 %d 节点的nextIndex为%d,LastLogIndex为 %d, 最后一项日志为：\n", rf.me, rf.peerTrackers[rf.me].nextIndex,
@@ -420,12 +429,16 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		}
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
-
+		// 丢掉旧rpc响应
+		if reply.FollowerTerm < rf.currentTerm {
+			return
+		}
 		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
 			rf.state = Follower
-			rf.NewTermL(reply.FollowerTerm)
+			rf.votedFor = None
+			rf.currentTerm = reply.FollowerTerm
 			rf.persist()
 			return
 		}

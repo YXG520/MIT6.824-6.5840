@@ -91,7 +91,8 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 
 	if args.LeaderTerm > rf.currentTerm {
 		rf.votedFor = None // 调整votedFor为-1
-		rf.currentTerm++
+		rf.currentTerm = args.LeaderTerm
+		reply.FollowerTerm = rf.currentTerm
 	}
 	defer rf.persist()
 	if args.PrevLogIndex+1 < rf.log.FirstLogIndex || args.PrevLogIndex > rf.log.LastLogIndex {
@@ -140,7 +141,6 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 			reply.PrevLogIndex = prevIndex
 			reply.PrevLogTerm = rf.getEntryTerm(prevIndex)
 			DPrintf(111, "%v: stepping over the index of currentTerm to the last log entry of last term", rf.SayMeL())
-
 		}
 
 	}
