@@ -108,7 +108,7 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 		return
 	}
 	//DPrintf(200, "I am %d and the dead state is %d with term %d", rf.me)
-	DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
+	//DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
 	rf.resetElectionTimer()
 	// 需要转变自己的身份为Follower
 	rf.state = Follower
