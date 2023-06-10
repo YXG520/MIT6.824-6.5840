@@ -5,10 +5,14 @@ import (
 )
 
 func (rf *Raft) pastHeartbeatTimeout() bool {
+	//rf.mu.Lock()
+	//defer rf.mu.Lock()
 	return time.Since(rf.lastHeartbeat) > rf.heartbeatTimeout
 }
 
 func (rf *Raft) resetHeartbeatTimer() {
+	//rf.mu.Lock()
+	//defer rf.mu.Lock()
 	rf.lastHeartbeat = time.Now()
 }
 

@@ -34,7 +34,7 @@ func (rf *Raft) StartElection() {
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok || !reply.VoteGranted {
-				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", funcB(), serverId, args.Term)
 				return
 			}
 
@@ -54,6 +54,7 @@ func (rf *Raft) StartElection() {
 				// 同时在成为leader的那一刻，就不需要管剩余节点的响应了，因为已经具备成为leader的条件
 				return
 			}
+			done = true
 			if rf.state != Candidate || rf.currentTerm != term {
 				DPrintf(111, "%v:自身状态已变为%d，拒绝变为leader。", rf.SayMeL(), rf.state)
 				return

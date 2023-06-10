@@ -355,7 +355,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	//rf.resetTrackedIndex()
 	DPrintf(1011, "%v: check the newly added log index：%d", rf.SayMeL(), rf.log.LastLogIndex)
 	//go rf.StartAppendEntries(false)
-	rf.StartAppendEntries(false)
+	go rf.StartAppendEntries(false)
 
 	return index, term, isLeader
 }
@@ -499,6 +499,11 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 func (rf *Raft) StartAppendEntries(heart bool) {
 	// 并行向其他节点发送心跳或者日志，让他们知道此刻已经有一个leader产生
 	//DPrintf(111, "%v: detect the len of peers: %d", rf.SayMeL(), len(rf.peers))
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.state != Leader {
+		return
+	}
 	for i, _ := range rf.peers {
 		if i == rf.me {
 			continue

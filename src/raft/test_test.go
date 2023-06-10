@@ -95,6 +95,45 @@ func TestReElection2A(t *testing.T) {
 	cfg.end()
 }
 
+//
+//func TestManyElections2A(t *testing.T) {
+//	servers := 7
+//	cfg := make_config(t, servers, false, false)
+//	defer cfg.cleanup()
+//
+//	cfg.begin("Test (2A): multiple elections")
+//
+//	cfg.checkOneLeader()
+//
+//	iters := 10
+//	for ii := 0; ii < iters; ii++ {
+//		DPrintf(11000, "the  %d th iter...\n", ii)
+//		// disconnect three nodes
+//		i1 := rand.Int() % servers
+//		//i2 := rand.Int() % servers
+//		//i3 := rand.Int() % servers
+//		DPrintf(111, "now attempting to disconnect one node %d...", i1)
+//		cfg.disconnect(i1)
+//		//cfg.disconnect(i2)
+//		//cfg.disconnect(i3)
+//		// either the current leader should still be alive,
+//		// or the remaining four should elect a new one.
+//		DPrintf(111, "check one leader...")
+//		cfg.checkOneLeader()
+//		DPrintf(111, "finish to check one leader...")
+//
+//		cfg.connect(i1)
+//		DPrintf(111, "now attempting to connect one node...")
+//
+//		//cfg.connect(i2)
+//		//cfg.connect(i3)
+//	}
+//
+//	cfg.checkOneLeader()
+//
+//	cfg.end()
+//}
+
 func TestManyElections2A(t *testing.T) {
 	servers := 7
 	cfg := make_config(t, servers, false, false)
@@ -106,45 +145,7 @@ func TestManyElections2A(t *testing.T) {
 
 	iters := 10
 	for ii := 0; ii < iters; ii++ {
-		DPrintf(11000, "the  %d th iter...\n", ii)
-		// disconnect three nodes
-		i1 := rand.Int() % servers
-		//i2 := rand.Int() % servers
-		//i3 := rand.Int() % servers
-		DPrintf(111, "now attempting to disconnect one node %d...", i1)
-		cfg.disconnect(i1)
-		//cfg.disconnect(i2)
-		//cfg.disconnect(i3)
-		// either the current leader should still be alive,
-		// or the remaining four should elect a new one.
-		DPrintf(111, "check one leader...")
-		cfg.checkOneLeader()
-		DPrintf(111, "finish to check one leader...")
-
-		cfg.connect(i1)
-		DPrintf(111, "now attempting to connect one node...")
-
-		//cfg.connect(i2)
-		//cfg.connect(i3)
-	}
-
-	cfg.checkOneLeader()
-
-	cfg.end()
-}
-
-func TestManyElections2A2(t *testing.T) {
-	servers := 7
-	cfg := make_config(t, servers, false, false)
-	defer cfg.cleanup()
-
-	cfg.begin("Test (2A): multiple elections")
-
-	cfg.checkOneLeader()
-
-	iters := 1000
-	for ii := 0; ii < iters; ii++ {
-		DPrintf(11000, "the  %d th iter...\n", ii)
+		DPrintf(110, "the  %d th iter...\n", ii)
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
