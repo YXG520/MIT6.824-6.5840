@@ -382,6 +382,9 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	rf.mu.Unlock()
 	if heart {
 		rf.mu.Lock()
+		if rf.state != Leader {
+			return
+		}
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		args.LeaderTerm = rf.currentTerm
@@ -391,8 +394,10 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		// 发送心跳包
 		return
 	} else {
-
 		rf.mu.Lock()
+		if rf.state != Leader {
+			return
+		}
 		args := RequestAppendEntriesArgs{}
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
@@ -419,6 +424,9 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		}
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
+		if rf.state != Leader {
+			return
+		}
 		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
