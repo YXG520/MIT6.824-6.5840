@@ -38,7 +38,10 @@ func (rf *Raft) StartElection() {
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
 			// 丢弃无效票
-			if term != reply.Term {
+			//if term != reply.Term {
+			//	return
+			//}
+			if rf.currentTerm > reply.Term {
 				return
 			}
 			// 统计票数
@@ -48,6 +51,7 @@ func (rf *Raft) StartElection() {
 				// 同时在成为leader的那一刻，就不需要管剩余节点的响应了，因为已经具备成为leader的条件
 				return
 			}
+			done = true
 			if rf.state != Candidate || rf.currentTerm != term {
 				return
 			}
