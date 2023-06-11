@@ -965,7 +965,7 @@ ok      MIT6.824-6.5840/raft    44.074s
 ，就具体的代码来说，主结点的commitIndex更新依赖于各个节点对应的matchIndex，
 而从节点的commitIndex更新依赖于主节点的commitIndex
 
-## raft集群中多数节点断联后，raft系统中的leader还能接收写和读操作吗？
+## Q9 raft集群中多数节点断联后，raft系统中的leader还能接收写和读操作吗？
 
 1 在大多数节点不包括leader节点下线但时，raft系统中的leader还能接收写和读操作吗
 
@@ -977,3 +977,40 @@ ok      MIT6.824-6.5840/raft    44.074s
 3 包括leader的情况下，过半节点下线，raft系统中还能接收写和读操作吗
 
 ![images/img_29.png](images/img_29.png)
+
+
+## Q10 为什么很多加锁开始的地方需要加if rf.state != Leader {return"?
+大家可以先看看我观看教学视频时做的笔记，直接定位到4，一个很类似的场景
+
+[MIT6.824 lecture5上课笔记（涉及到Lab2A）- Go threads and raft](https://blog.csdn.net/yxg520s/article/details/130708325?spm=1001.2014.3001.5501)
+
+看完四，我们再想想，leader发送AppendEntries rpc的加锁过程是这样的
+
+```go
+#A
+rf.mu.Lock()
+设置参数
+获取rf实例的任期term并且修改
+rf.mu.Unlock()
+
+#B
+ok := call sendAppendEntries()
+
+#C
+rf.mu.Lock()
+取到响应参数
+获取rf实例的任期term
+rf.mu.Unlock()
+
+```
+
+当发送rpc的协程执行到#B的时候没有加锁，所以此时有可能leader的状态
+因为某种原因被切换为follower，那么#C代码段是不能执行的。
+
+同理在在进入到#A代码段之前，该实例对应的leader也有可能变为follower，
+则此时应该直接返回。
+
+所以这就要求我们在获取后要做的第一件事就是判断自己是否是leader节点，
+如果不是则拒绝接受。
+
+类似的方案在AppendEntries和startElection中有所体现

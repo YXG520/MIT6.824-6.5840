@@ -36,19 +36,20 @@ func (rf *Raft) StartElection() {
 				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 				return
 			}
-			//if reply.Term < rf.currentTerm {
-			//	DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
+
+			//if reply.Term < term {
+			//	// 保证不是旧任期时产生的无效投票
+			//	//DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
 			//	return
 			//}
-			if reply.Term < term {
-				// 保证不是旧任期时产生的无效投票
-				//DPrintf(1110, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
-				return
-			}
 
 			//DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
+			if reply.Term < rf.currentTerm {
+				DPrintf(111, "%v: reply.Term is %d, refuse to gather", rf.SayMeL(), reply.Term)
+				return
+			}
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -56,6 +57,7 @@ func (rf *Raft) StartElection() {
 				// 同时在成为leader的那一刻，就不需要管剩余节点的响应了，因为已经具备成为leader的条件
 				return
 			}
+			done = true
 			if rf.state != Candidate || rf.currentTerm != term {
 				return
 			}
@@ -130,11 +132,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	reply.VoteGranted = true // 默认设置响应体为投同意票状态
+	reply.Term = rf.currentTerm
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
-		reply.Term = rf.currentTerm
-
 		return
 	}
 	if args.Term > rf.currentTerm {
@@ -147,7 +148,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.SayMeL(), args.CandidateId, rf.getLastEntryTerm(), rf.log.LastLogIndex, args.LastLogTerm, args.LastLogIndex)
 
 	// candidate节点发送过来的日志索引以及任期必须大于等于自己的日志索引及任期
-	update := false
+	update := true
 	update = update || args.LastLogTerm > rf.getLastEntryTerm()
 	update = update || args.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex
 
