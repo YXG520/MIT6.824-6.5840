@@ -1,6 +1,0 @@
-Test (2A): initial election ...
-  ... Passed --   3.6  3   48   17030    0
-Test (2A): election after network failure ...
-*** Test killed: ran too long (11m0s).
-exit status 1
-FAIL	MIT6.824-6.5840/raft	671.168s
