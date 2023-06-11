@@ -139,8 +139,10 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	DPrintf(111, "call GetState to judge a leader either exist")
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	DPrintf(111, "%v:get the lock and now node.", rf.SayMeL())
 	term = rf.currentTerm
 	isleader = rf.state == Leader
 	return term, isleader
@@ -296,11 +298,11 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	if rf.state != Leader {
-		return
-	}
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
+	//if rf.state != Leader {
+	//	return
+	//}
 	// 并行向其他节点发送心跳或者日志，让他们知道此刻已经有一个leader产生
 	//DPrintf(111, "%v: detect the len of peers: %d", rf.SayMeL(), len(rf.peers))
 	for i, _ := range rf.peers {
@@ -388,7 +390,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		args.LeaderTerm = rf.currentTerm
-		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
+		DPrintf(111, "%v: %d is a leader, ready sending heartbeart to follower %d....", rf.SayMeL(), rf.me, targetServerId)
 		rf.mu.Unlock()
 		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
 		// 发送心跳包
@@ -427,11 +429,17 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		if rf.state != Leader {
 			return
 		}
+		// 丢弃旧的rpc响应
+		if reply.FollowerTerm < rf.currentTerm {
+			return
+		}
+
 		DPrintf(111, "%v: get reply from %v reply.Term=%v reply.Success=%v reply.PrevLogTerm=%v reply.PrevLogIndex=%v myinfo:rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n",
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
 			rf.state = Follower
-			rf.NewTermL(reply.FollowerTerm)
+			rf.currentTerm = None
+			rf.votedFor = None
 			return
 		}
 		DPrintf(111, "%v: get append reply reply.PrevLogIndex=%v reply.PrevLogTerm=%v reply.Success=%v heart=%v\n", rf.SayMeL(), reply.PrevLogIndex, reply.PrevLogTerm, reply.Success, heart)
@@ -469,11 +477,6 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		}
 
 	}
-}
-
-func (rf *Raft) NewTermL(term int) {
-	DPrintf(850, "%v : from old term %v to new term %v\n", rf.SayMeL(), rf.currentTerm, term)
-	rf.currentTerm, rf.votedFor = term, None
 }
 
 func (rf *Raft) SayMeL() string {
@@ -572,15 +575,15 @@ func (rf *Raft) ticker() {
 			//	break
 			//}
 			// 只有Leader节点才能发送心跳和日志给从节点
-			isHeartbeat := false
-			// 检测是需要发送单纯的心跳还是发送日志
-			// 心跳定时器过期则发送心跳，否则发送日志
-			if rf.pastHeartbeatTimeout() {
-				isHeartbeat = true
-				rf.resetHeartbeatTimer()
-				//rf.StartAppendEntries(isHeartbeat)
-			}
-			rf.StartAppendEntries(isHeartbeat)
+			//isHeartbeat := false
+			//// 检测是需要发送单纯的心跳还是发送日志
+			//// 心跳定时器过期则发送心跳，否则发送日志
+			//if rf.pastHeartbeatTimeout() {
+			//	isHeartbeat = true
+			//	rf.resetHeartbeatTimer()
+			//	//rf.StartAppendEntries(isHeartbeat)
+			//}
+			rf.StartAppendEntries(true)
 		}
 
 		//rf.mu.Unlock()
