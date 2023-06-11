@@ -57,6 +57,7 @@ func (rf *Raft) StartElection() {
 				// 同时在成为leader的那一刻，就不需要管剩余节点的响应了，因为已经具备成为leader的条件
 				return
 			}
+			done = true
 			if rf.state != Candidate || rf.currentTerm != term {
 				return
 			}
