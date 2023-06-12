@@ -58,7 +58,7 @@ func (rf *Raft) StartElection() {
 			//rf.state = Leader // 将自身设置为leader
 			rf.becomeLeader()
 			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
-			go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
+			//go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 		}(i)
 	}
 }
@@ -103,7 +103,7 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 		return
 	}
 	//DPrintf(200, "I am %d and the dead state is %d with term %d", rf.me)
-	DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
+	//DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
 	rf.resetElectionTimer()
 	// 需要转变自己的身份为Follower
 	rf.state = Follower

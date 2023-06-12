@@ -20,7 +20,6 @@ package raft
 import (
 	"MIT6.824-6.5840/labgob"
 	"bytes"
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -52,7 +51,7 @@ type ApplyMsg struct {
 
 // 设置状态类型
 const Follower, Candidate, Leader int = 1, 2, 3
-const tickInterval = 50 * time.Millisecond
+const tickInterval = 70 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 
 // A Go object implementing a single Raft peer.
@@ -160,7 +159,7 @@ func (rf *Raft) persist() {
 	e.Encode(rf.log)         // 持久化日志
 	data := w.Bytes()
 	go rf.persister.SaveRaftState(data)
-	DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
+	//DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
 }
 
 // restore previously persisted state.
@@ -391,6 +390,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		args := RequestAppendEntriesArgs{}
 		rf.mu.Lock()
 		if rf.state != Leader {
+			rf.mu.Unlock()
 			return
 		}
 		args.LeaderTerm = rf.currentTerm
@@ -403,6 +403,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		args := RequestAppendEntriesArgs{}
 		rf.mu.Lock()
 		if rf.state != Leader {
+			rf.mu.Unlock()
 			return
 		}
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
@@ -478,14 +479,9 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	}
 }
 
-func (rf *Raft) NewTermL(term int) {
-	DPrintf(850, "%v : from old term %v to new term %v\n", rf.SayMeL(), rf.currentTerm, term)
-	rf.currentTerm, rf.votedFor = term, None
-}
-
 func (rf *Raft) SayMeL() string {
-	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
-	//return "success"
+	//return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
