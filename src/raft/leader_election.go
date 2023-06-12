@@ -17,12 +17,13 @@ func (rf *Raft) StartElection() {
 	term := rf.currentTerm
 	done := false
 	votes := 1
-	DPrintf(222, "[%d] attempting an election at term %d...", rf.me, rf.currentTerm)
 	args := RequestVoteArgs{}
 	args.Term = rf.currentTerm
 	args.CandidateId = rf.me
 	args.LastLogIndex = rf.log.LastLogIndex
 	args.LastLogTerm = rf.getLastEntryTerm()
+	DPrintf(222, "[%d] attempting an election at term %d with my LastLogIndex %d and LastLogTerm %d", rf.me, rf.currentTerm, rf.log.LastLogIndex, args.LastLogTerm)
+
 	for i, _ := range rf.peers {
 		if rf.me == i {
 			continue
@@ -80,7 +81,7 @@ func (rf *Raft) resetElectionTimer() {
 	electionTimeout := baseElectionTimeout + (rand.Int63() % baseElectionTimeout)
 	rf.electionTimeout = time.Duration(electionTimeout) * time.Millisecond
 	rf.lastElection = time.Now()
-	DPrintf(222, "%d has refreshed the electionTimeout at term %d to a random value %d...\n", rf.me, rf.currentTerm, rf.electionTimeout/1000000)
+	DPrintf(222, "%v: %d has refreshed the electionTimeout at term %d to a random value %d...\n", rf.SayMeL(), rf.me, rf.currentTerm, rf.electionTimeout/1000000)
 }
 
 func (rf *Raft) becomeCandidate() {
@@ -112,16 +113,18 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 		return
 	}
 	//DPrintf(200, "I am %d and the dead state is %d with term %d", rf.me)
-	//DPrintf(200, "%v: I am now receiving heartbeat from leader %d and dead state is %d", rf.SayMeL(), args.LeaderId, rf.dead)
+	DPrintf(200, "%v: I am now receiving heartbeat from leader %d at term %d", rf.SayMeL(), args.LeaderId, args.LeaderTerm)
 	rf.resetElectionTimer()
 	// 需要转变自己的身份为Follower
 	rf.state = Follower
+	rf.votedFor = args.LeaderId
+
 	// 承认来者是个合法的新leader，则任期一定大于自己，此时需要设置votedFor为-1以及
 	if args.LeaderTerm > rf.currentTerm {
+		DPrintf(111, "%v: leader %d's term at %d is greater than me", rf.SayMeL(), args.LeaderId, args.LeaderTerm)
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
 		reply.FollowerTerm = rf.currentTerm
-
 	}
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 }
@@ -135,6 +138,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term = rf.currentTerm
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
+		DPrintf(111, "%v: 投出反对票给节点%d, 原因：任期", rf.SayMeL(), args.CandidateId)
 		reply.VoteGranted = false
 		return
 	}
@@ -148,7 +152,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.SayMeL(), args.CandidateId, rf.getLastEntryTerm(), rf.log.LastLogIndex, args.LastLogTerm, args.LastLogIndex)
 
 	// candidate节点发送过来的日志索引以及任期必须大于等于自己的日志索引及任期
-	update := true
+	update := false
 	update = update || args.LastLogTerm > rf.getLastEntryTerm()
 	update = update || args.LastLogTerm == rf.getLastEntryTerm() && args.LastLogIndex >= rf.log.LastLogIndex
 
@@ -162,6 +166,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	} else {
 		reply.VoteGranted = false
-		DPrintf(111, "%v: 投出反对票给节点%d", rf.SayMeL(), args.CandidateId)
+		DPrintf(111, "%v: 投出反对票给节点%d， 原因：我已经投票给%d", rf.SayMeL(), args.CandidateId, rf.votedFor)
 	}
 }

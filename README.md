@@ -1014,3 +1014,8 @@ rf.mu.Unlock()
 如果不是则拒绝接受。
 
 类似的方案在AppendEntries和startElection中有所体现
+
+
+## Q10 需要在return语句之前释放锁吗？
+
+![img.png](img.png)

@@ -139,10 +139,10 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
-	DPrintf(111, "call GetState to judge a leader either exist")
+	//DPrintf(111, "call GetState to judge a leader either exist")
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	DPrintf(111, "%v:get the lock and now node.", rf.SayMeL())
+	DPrintf(111, "%v:I vote for %d", rf.SayMeL(), rf.votedFor)
 	term = rf.currentTerm
 	isleader = rf.state == Leader
 	return term, isleader
@@ -298,17 +298,20 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-	//rf.mu.Lock()
-	//defer rf.mu.Unlock()
-	//if rf.state != Leader {
-	//	return
-	//}
+
 	// 并行向其他节点发送心跳或者日志，让他们知道此刻已经有一个leader产生
 	//DPrintf(111, "%v: detect the len of peers: %d", rf.SayMeL(), len(rf.peers))
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.state != Leader {
+		return
+	}
+	rf.resetElectionTimer()
 	for i, _ := range rf.peers {
 		if i == rf.me {
 			continue
 		}
+
 		go rf.AppendEntries(i, heart)
 
 	}
@@ -379,25 +382,50 @@ func (rf *Raft) StartAppendEntries(heart bool) {
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	//rf.mu.Lock()
 	//defer rf.mu.Unlock()
-	rf.mu.Lock()
-	rf.resetElectionTimer()
-	rf.mu.Unlock()
+
 	if heart {
 		rf.mu.Lock()
 		if rf.state != Leader {
+			rf.mu.Unlock() //必须解锁，否则会造成死锁
 			return
 		}
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
 		args.LeaderTerm = rf.currentTerm
+		args.LeaderId = rf.me
 		DPrintf(111, "%v: %d is a leader, ready sending heartbeart to follower %d....", rf.SayMeL(), rf.me, targetServerId)
 		rf.mu.Unlock()
-		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
 		// 发送心跳包
+
+		//rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
+		ok := rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
+		if !ok {
+			return
+		}
+		if reply.Success {
+			// 返回成功则说明接收了心跳
+			return
+		}
+		rf.mu.Lock()
+		if rf.state != Leader {
+			rf.mu.Unlock()
+			return
+		}
+		if reply.FollowerTerm < rf.currentTerm {
+			return
+		}
+		// 拒绝接收心跳，则可能是因为任期导致的
+		if reply.FollowerTerm > rf.currentTerm {
+			rf.votedFor = None
+			rf.state = Follower
+			rf.currentTerm = reply.FollowerTerm
+		}
+		rf.mu.Unlock()
 		return
 	} else {
 		rf.mu.Lock()
 		if rf.state != Leader {
+			rf.mu.Unlock()
 			return
 		}
 		args := RequestAppendEntriesArgs{}
@@ -427,6 +455,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 		if rf.state != Leader {
+			rf.mu.Unlock()
 			return
 		}
 		// 丢弃旧的rpc响应
@@ -438,7 +467,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			rf.SayMeL(), targetServerId, reply.FollowerTerm, reply.Success, reply.PrevLogTerm, reply.PrevLogIndex, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 		if reply.FollowerTerm > rf.currentTerm {
 			rf.state = Follower
-			rf.currentTerm = None
+			rf.currentTerm = reply.FollowerTerm
 			rf.votedFor = None
 			return
 		}
@@ -583,7 +612,12 @@ func (rf *Raft) ticker() {
 			//	rf.resetHeartbeatTimer()
 			//	//rf.StartAppendEntries(isHeartbeat)
 			//}
-			rf.StartAppendEntries(true)
+			//rf.StartAppendEntries(true)
+
+			if rf.pastHeartbeatTimeout() {
+				rf.resetHeartbeatTimer()
+				rf.StartAppendEntries(true)
+			}
 		}
 
 		//rf.mu.Unlock()
