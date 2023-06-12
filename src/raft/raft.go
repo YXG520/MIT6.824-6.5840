@@ -413,7 +413,6 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		}
 		if reply.FollowerTerm < rf.currentTerm {
 			rf.mu.Unlock()
-
 			return
 		}
 		// 拒绝接收心跳，则可能是因为任期导致的

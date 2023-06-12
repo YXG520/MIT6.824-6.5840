@@ -13,6 +13,10 @@ const None = -1
 func (rf *Raft) StartElection() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	if rf.state == Leader {
+		// 如果是leader，则应该不应该进行选举
+		return
+	}
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
