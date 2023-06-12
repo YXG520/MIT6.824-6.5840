@@ -50,7 +50,7 @@ type ApplyMsg struct {
 
 // 设置状态类型
 const Follower, Candidate, Leader int = 1, 2, 3
-const tickInterval = 50 * time.Millisecond
+const tickInterval = 70 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 
 // A Go object implementing a single Raft peer.
