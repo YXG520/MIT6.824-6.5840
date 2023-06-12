@@ -412,6 +412,8 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			return
 		}
 		if reply.FollowerTerm < rf.currentTerm {
+			rf.mu.Unlock()
+
 			return
 		}
 		// 拒绝接收心跳，则可能是因为任期导致的
@@ -455,7 +457,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			//rf.mu.Unlock()
 			return
 		}
 		// 丢弃旧的rpc响应
@@ -604,20 +606,19 @@ func (rf *Raft) ticker() {
 			//	break
 			//}
 			// 只有Leader节点才能发送心跳和日志给从节点
-			//isHeartbeat := false
-			//// 检测是需要发送单纯的心跳还是发送日志
-			//// 心跳定时器过期则发送心跳，否则发送日志
-			//if rf.pastHeartbeatTimeout() {
-			//	isHeartbeat = true
-			//	rf.resetHeartbeatTimer()
-			//	//rf.StartAppendEntries(isHeartbeat)
-			//}
-			//rf.StartAppendEntries(true)
-
+			isHeartbeat := false
+			// 检测是需要发送单纯的心跳还是发送日志
+			// 心跳定时器过期则发送心跳，否则发送日志
 			if rf.pastHeartbeatTimeout() {
+				isHeartbeat = true
 				rf.resetHeartbeatTimer()
-				rf.StartAppendEntries(true)
+				rf.StartAppendEntries(isHeartbeat)
 			}
+			rf.StartAppendEntries(isHeartbeat)
+			//if rf.pastHeartbeatTimeout() {
+			//	rf.resetHeartbeatTimer()
+			//	rf.StartAppendEntries(true)
+			//}
 		}
 
 		//rf.mu.Unlock()

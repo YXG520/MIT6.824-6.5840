@@ -1018,4 +1018,4 @@ rf.mu.Unlock()
 
 ## Q10 需要在return语句之前释放锁吗？
 
-![img.png](img.png)
+![img.png](images/img_31.png)
