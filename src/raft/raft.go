@@ -54,6 +54,9 @@ const Follower, Candidate, Leader int = 1, 2, 3
 const tickInterval = 70 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 
+//var cfgs []config
+//var index = 0
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -440,6 +443,8 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		return
 	} else {
 		args := RequestAppendEntriesArgs{}
+		reply := RequestAppendEntriesReply{}
+
 		rf.mu.Lock()
 		if rf.state != Leader {
 			rf.mu.Unlock()
@@ -461,8 +466,6 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		DPrintf(111, "%v: the len of log entries: %d is ready to send to node %d!!! and the entries are %v\n",
 			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
 		rf.mu.Unlock()
-		reply := RequestAppendEntriesReply{}
-
 		//fmt.Printf("\n %d is a leader, ready sending log entries to follower %d with args leaderTerm:%d, PrevLogIndex: %d, PrevLogTerm:%d, lastEntry:%v....", rf.me, targetServerId, args.LeaderTerm, args.PrevLogIndex, args.PrevLogTerm, args.Entries[args.PrevLogIndex])
 		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
 		if !ok {
@@ -530,7 +533,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 }
 
 func (rf *Raft) SayMeL() string {
-	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d]", rf.me, rf.state, rf.currentTerm, rf.votedFor)
 	//return "success"
 }
 

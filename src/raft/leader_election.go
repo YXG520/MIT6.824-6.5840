@@ -34,7 +34,7 @@ func (rf *Raft) StartElection() {
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok || !reply.VoteGranted {
-				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				DPrintf(101, "%v: cannot be given a vote by node %v at reply.term=%v\n", rf.SayMeL(), serverId, reply.Term)
 				return
 			}
 
@@ -43,16 +43,18 @@ func (rf *Raft) StartElection() {
 			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
 
 			if reply.Term < rf.currentTerm {
+				DPrintf(111, "%v: 来自%d 在任期 %d 的旧投票，拒绝接受", rf.SayMeL(), serverId, reply.Term)
 				return
 			}
 			// 角色变换
-			if reply.Term > rf.currentTerm {
-				rf.state = Follower
-				rf.votedFor = None
-				rf.currentTerm = reply.Term
-				rf.persist()
-				return
-			}
+			//if reply.Term > rf.currentTerm {
+			//	DPrintf(111, "%v: %d 的任期是 %d, 比我大，变为follower", rf.SayMeL(), serverId)
+			//	rf.state = Follower
+			//	rf.votedFor = None
+			//	rf.currentTerm = reply.Term
+			//	rf.persist()
+			//	return
+			//}
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -65,8 +67,8 @@ func (rf *Raft) StartElection() {
 			}
 			//rf.state = Leader // 将自身设置为leader
 			rf.becomeLeader()
-			defer rf.persist()
-			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
+			rf.persist()
+			DPrintf(222, "\n%v: [%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.SayMeL(), rf.me, rf.currentTerm, rf.state)
 			//go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 		}(i)
 	}
