@@ -1158,7 +1158,10 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			// make sure all followers have caught up, so that
 			// an InstallSnapshot RPC isn't required for
 			// TestSnapshotBasic2D().
+			DPrintf(111, "ready to check whether all nodes have replicated data...")
 			cfg.one(rand.Int(), servers, true)
+			DPrintf(111, "ready to check whether all nodes have replicated data...")
+
 		} else {
 			cfg.one(rand.Int(), servers-1, true)
 		}
