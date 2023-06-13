@@ -65,7 +65,7 @@ The Lab2C's realization of MIT6.5840(also early called 6.824) Distributed System
 
 ## 2.2 这里的Snapshot方法体内需要编写什么代码？
 > 我们看到Snapshot方法仅被一个config文件里的applierSnap方法调用，而applierSnap
-> 方法用于被tester周期性的执行，
+> 方法用于被tester周期性的执行，生成快照并且发送给从节点
 >
 我们看看applierSnap方法体：
 
@@ -121,6 +121,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			cfg.mu.Unlock()
 
 			if (m.CommandIndex+1)%SnapShotInterval == 0 {
+				// 开始生成快照
 				w := new(bytes.Buffer)
 				e := labgob.NewEncoder(w)
 				e.Encode(m.CommandIndex)
@@ -129,6 +130,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 					xlog = append(xlog, cfg.logs[i][j])
 				}
 				e.Encode(xlog)
+				// 将快照发送给节点
 				rf.Snapshot(m.CommandIndex, w.Bytes())
 			}
 		} else {
@@ -143,6 +145,47 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 	}
 }
 
+```
+
+## 2.3 从snapcommon方法解析整个2D的测试逻辑
+
+> 首先可以看到2D的大多数测试点都调用了此方法，所以我们着重分析它
+
+这里为了验证日志是否从leader节点同步了大部分日志给从节点，调用的依然是和2B一样的验证方法，cfg.one以及cfg.ncommitted，
+
+点进去cfg.one()->cfg.ncommitted()-> cfg.logs[i][j]
+
+通过我们发现发送快照的来源是 cfg.logs[i][j]， 然后又从config.go文件中查找到一个叫ingestSnap的
+
+方法会读取快照然后恢复状态机，这里的快照数据是持久化时产生的。
+
+```go
+// returns "" or error string
+func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
+	if snapshot == nil {
+		log.Fatalf("nil snapshot")
+		return "nil snapshot"
+	}
+	r := bytes.NewBuffer(snapshot)
+	d := labgob.NewDecoder(r)
+	var lastIncludedIndex int
+	var xlog []interface{}
+	if d.Decode(&lastIncludedIndex) != nil ||
+		d.Decode(&xlog) != nil {
+		log.Fatalf("snapshot decode error")
+		return "snapshot Decode() error"
+	}
+	if index != -1 && index != lastIncludedIndex {
+		err := fmt.Sprintf("server %v snapshot doesn't match m.SnapshotIndex", i)
+		return err
+	}
+	cfg.logs[i] = map[int]interface{}{}
+	for j := 0; j < len(xlog); j++ {
+		cfg.logs[i][j] = xlog[j]
+	}
+	cfg.lastApplied[i] = lastIncludedIndex
+	return ""
+}
 ```
 
 # 3 本项目一些具体的快照逻辑
@@ -269,3 +312,11 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 这里会依据持久化索引lastIncludedIndex，如果大于0则两者都持久化（
 说明有快照），否则只持久化日志, 
+
+# 6 发送快照上 是要单独开一个定时任务去执行嘛
+
+![img_1.png](img_1.png)
+
+
+# 7 当主节点发送一个快照到从节点后，从节点的日志为空怎么办？
+> 

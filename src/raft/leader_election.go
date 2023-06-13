@@ -47,14 +47,14 @@ func (rf *Raft) StartElection() {
 				return
 			}
 			// 角色变换
-			//if reply.Term > rf.currentTerm {
-			//	DPrintf(111, "%v: %d 的任期是 %d, 比我大，变为follower", rf.SayMeL(), serverId)
-			//	rf.state = Follower
-			//	rf.votedFor = None
-			//	rf.currentTerm = reply.Term
-			//	rf.persist()
-			//	return
-			//}
+			if reply.Term > rf.currentTerm {
+				DPrintf(111, "%v: %d 的任期是 %d, 比我大，变为follower", rf.SayMeL(), serverId, args.Term)
+				rf.state = Follower
+				rf.votedFor = None
+				rf.currentTerm = reply.Term
+				rf.persist()
+				return
+			}
 			// 统计票数
 			votes++
 			if done || votes <= len(rf.peers)/2 {
@@ -67,7 +67,6 @@ func (rf *Raft) StartElection() {
 			}
 			//rf.state = Leader // 将自身设置为leader
 			rf.becomeLeader()
-			rf.persist()
 			DPrintf(222, "\n%v: [%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.SayMeL(), rf.me, rf.currentTerm, rf.state)
 			//go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 		}(i)
@@ -124,7 +123,7 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 		reply.FollowerTerm = rf.currentTerm
 		//rf.persist()
 	}
-	defer rf.persist()
+	rf.persist()
 
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 }
@@ -139,6 +138,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
+		rf.persist()
 		return
 	}
 	if args.Term > rf.currentTerm {
@@ -164,10 +164,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.resetElectionTimer() //自己的票已经投出时就转为follower状态
 		DPrintf(111, "%v: 投出同意票给节点%d", rf.SayMeL(), args.CandidateId)
 		rf.persist()
+
 	} else {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
-
 		DPrintf(111, "%v: 投出反对票给节点%d", rf.SayMeL(), args.CandidateId)
 	}
+
 }

@@ -96,6 +96,31 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 		reply.FollowerTerm = rf.currentTerm
 	}
 	defer rf.persist()
+
+	if rf.log.empty() {
+		// 首先可以确定的是，主结点的args.PrevLogIndex = min(rf.nextIndex[i]-1, rf.lastLogIndex)
+		// 这可以比从节点的rf.snapshotLastIncludeIndex大、小或者等价， 因为可以根据
+		// args.PrevLogIndex的计算式子得出，nextIndex在leader刚选出时是0，
+		// 日志为空，要么是节点刚启动的初始状态，要么是被快照截断后的状态
+		// 在初始状态，两者都是0，从节点可以全部接收日志，
+		// 若被日志截断，则rf.snapshotLastIncludeIndex前面的日志都是无效的，
+		// args.PrevLogIndex >  rf.snapshotLastIncludeIndex 这部分
+		// 日志肯定不能插入，所以也会丢弃
+		if args.PrevLogIndex == rf.snapshotLastIncludeIndex {
+			rf.log.appendL(args.Entries...)
+			reply.FollowerTerm = rf.currentTerm
+			reply.Success = true
+			reply.PrevLogIndex = rf.log.LastLogIndex
+			reply.PrevLogTerm = rf.getLastEntryTerm()
+			return
+		} else {
+			reply.FollowerTerm = rf.currentTerm
+			reply.Success = false
+			reply.PrevLogIndex = rf.log.LastLogIndex
+			reply.PrevLogTerm = rf.getLastEntryTerm()
+			return
+		}
+	}
 	if args.PrevLogIndex+1 < rf.log.FirstLogIndex || args.PrevLogIndex > rf.log.LastLogIndex {
 		DPrintf(111, "args.PrevLogIndex is %d, out of index...", args.PrevLogIndex)
 		reply.FollowerTerm = rf.currentTerm
@@ -142,6 +167,10 @@ func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *Re
 			reply.PrevLogIndex = prevIndex
 			reply.PrevLogTerm = rf.getEntryTerm(prevIndex)
 			DPrintf(111, "%v: stepping over the index of currentTerm to the last log entry of last term", rf.SayMeL())
+		} else {
+			// 小于rf.log.FirstLogIndex则需要使用 rf.snapshotLastIncludeIndex
+			reply.PrevLogIndex = rf.snapshotLastIncludeIndex
+			reply.PrevLogTerm = rf.snapshotLastIncludeTerm
 		}
 
 	}

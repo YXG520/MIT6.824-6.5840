@@ -29,6 +29,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 		newFirstLogIndex := index + 1
 		if newFirstLogIndex <= rf.log.LastLogIndex {
 			rf.log.Entries = rf.log.Entries[newFirstLogIndex-rf.log.FirstLogIndex:]
+			DPrintf(111, "%v: 被快照截断后的日志为: %v", rf.SayMeL(), rf.log.Entries)
 		} else {
 			rf.log.LastLogIndex = newFirstLogIndex - 1
 			rf.log.Entries = make([]Entry, 0)
@@ -46,8 +47,8 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 			}
 			go rf.InstallSnapshot(i)
 		}
-		DPrintf(11, "%v: len(rf.log.Entries)=%v rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v rf.commitIndex=%v  rf.lastApplied=%v\n",
-			rf.SayMeL(), len(rf.log.Entries), rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.commitIndex, rf.lastApplied)
+		//DPrintf(11, "%v: len(rf.log.Entries)=%v rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v rf.commitIndex=%v  rf.lastApplied=%v\n",
+		//	rf.SayMeL(), len(rf.log.Entries), rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.commitIndex, rf.lastApplied)
 	}
 
 }
@@ -55,11 +56,11 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 func (rf *Raft) RequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *RequestInstallSnapShotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer DPrintf(11, "%v: RequestInstallSnapshot end  args.LeaderId=%v, args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
-	DPrintf(11, "%v: RequestInstallSnapshot begin  args.LeaderId=%v, args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
-
+	//defer DPrintf(11, "%v: RequestInstallSnapshot end  args.LeaderId=%v, args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
+	DPrintf(111, "%v: receiving snapshot from LeaderId=%v with args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
+	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
-		reply.Term = rf.currentTerm
+		DPrintf(111, "%v: refusing snapshot from leader %d 's snapshot request since its term is %d", rf.SayMeL(), args.LeaderId, args.Term)
 		return
 	}
 	rf.state = Follower
@@ -68,10 +69,12 @@ func (rf *Raft) RequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *
 		rf.votedFor = -1
 		rf.currentTerm = args.Term
 		reply.Term = rf.currentTerm
+
 	}
 	defer rf.persist()
+
 	if args.LastIncludeIndex > rf.snapshotLastIncludeIndex {
-		DPrintf(800, "%v: before install snapshot %s: rf.log.FirstLogIndex=%v, rf.log=%v", rf.SayMeL(), rf.SayMeL(), rf.log.FirstLogIndex, rf.log)
+		DPrintf(800, "%v: before install snapshot from leader %d: leader.log=%v", rf.SayMeL(), args.LeaderId, rf.log)
 		rf.snapshot = args.Snapshot
 		rf.snapshotLastIncludeIndex = args.LastIncludeIndex
 		rf.snapshotLastIncludeTerm = args.LastIncludeTerm
@@ -98,6 +101,8 @@ func (rf *Raft) RequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *
 		}
 		rf.commitIndex = max(rf.commitIndex, args.LastIncludeIndex)
 	}
+	DPrintf(111, "%v: successfully installing snapshot from LeaderId=%v with args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
+
 }
 
 func (rf *Raft) InstallSnapshot(serverId int) {
@@ -105,14 +110,12 @@ func (rf *Raft) InstallSnapshot(serverId int) {
 	args := RequestInstallSnapShotArgs{}
 	reply := RequestInstallSnapShotReply{}
 	rf.mu.Lock()
-	//defer rf.mu.Unlock()
-	DPrintf(110, "%v: InstallSnapshot begin serverId=%v myinfo:rf.lastApplied=%v, rf.log.FirstLogIndex=%v\n", rf.SayMeL(), serverId, rf.lastApplied, rf.log.FirstLogIndex)
-	defer DPrintf(11, "%v: InstallSnapshot end serverId=%v\n", rf.SayMeL(), serverId)
 	if rf.state != Leader {
+		DPrintf(111, "%v: 状态已变，不是leader节点，无法发送快照", rf.SayMeL())
 		rf.mu.Unlock()
 		return
 	}
-
+	DPrintf(111, "%v: 准备向节点%d发送快照", rf.SayMeL(), serverId)
 	args.Term = rf.currentTerm
 	args.LeaderId = rf.me
 	args.LastIncludeIndex = rf.snapshotLastIncludeIndex
@@ -121,18 +124,19 @@ func (rf *Raft) InstallSnapshot(serverId int) {
 	rf.mu.Unlock()
 
 	ok := rf.sendRequestInstallSnapshot(serverId, &args, &reply)
-
+	if !ok {
+		//DPrintf(12, "%v: cannot sendRequestInstallSnapshot to  %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+		return
+	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	if !ok {
-		DPrintf(12, "%v: cannot sendRequestInstallSnapshot to  %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
-		return
-	}
 	if rf.state != Leader {
+		DPrintf(111, "%v: 因为不是leader，放弃处理%d的快照响应", rf.SayMeL(), serverId)
 		return
 	}
 	if reply.Term < rf.currentTerm {
+		DPrintf(111, "%v: 因为是旧的快照响应，放弃处理%d的快照响应, 旧响应的任期是%d", rf.SayMeL(), serverId, reply.Term)
 		return
 	}
 	if reply.Term > rf.currentTerm {
@@ -144,6 +148,8 @@ func (rf *Raft) InstallSnapshot(serverId int) {
 	}
 	rf.peerTrackers[serverId].nextIndex = args.LastIncludeIndex + 1
 	rf.peerTrackers[serverId].matchIndex = args.LastIncludeIndex
+	DPrintf(111, "%v: 更新节点%d的nextIndex为%d, matchIndex为%d", rf.SayMeL(), serverId, rf.peerTrackers[serverId].nextIndex, args.LastIncludeIndex)
+
 	rf.tryCommitL(rf.peerTrackers[serverId].matchIndex)
 }
 
