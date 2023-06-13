@@ -34,6 +34,8 @@ func (log *Log) appendL(newEntries ...Entry) {
 	log.LastLogIndex += len(newEntries)
 
 }
+
+// 这是按照相对FirstLogIndex的偏移量来取日志的
 func (log *Log) getAppendEntries(start int) []Entry {
 	ret := append([]Entry{}, log.Entries[log.getRealIndex(start):log.getRealIndex(log.LastLogIndex)+1]...)
 	return ret
@@ -47,6 +49,7 @@ func (log *Log) String() string {
 func (log *Log) empty() bool {
 	return log.FirstLogIndex > log.LastLogIndex
 }
+
 func (rf *Raft) getEntryTerm(index int) int {
 	if index == 0 {
 		return 0
