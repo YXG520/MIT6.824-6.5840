@@ -404,7 +404,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			return
 		}
 		args.LeaderTerm = rf.currentTerm
-		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
+		DPrintf(111, "\n %v: %d is a leader, ready sending heartbeart to follower %d....", rf.SayMeL(), rf.me, targetServerId)
 		rf.mu.Unlock()
 		ok := rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
 		rf.mu.Lock()
