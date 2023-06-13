@@ -20,7 +20,7 @@ package raft
 import (
 	"MIT6.824-6.5840/labgob"
 	"bytes"
-	"math/rand"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -81,6 +81,10 @@ type Raft struct {
 
 	applyHelper *ApplyHelper
 	applyCond   *sync.Cond
+
+	snapshot                 []byte
+	snapshotLastIncludeIndex int
+	snapshotLastIncludeTerm  int
 }
 
 type RequestAppendEntriesArgs struct {
@@ -119,19 +123,6 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
-func (rf *Raft) getHeartbeatTime() time.Duration {
-	return time.Millisecond * 110
-}
-
-// 随机化的选举超时时间
-func (rf *Raft) getElectionTime() time.Duration {
-	// [250,400) 250+[0,150]
-	// return time.Millisecond * time.Duration(250+15*rf.me)
-	//return time.Millisecond * time.Duration(350+rand.Intn(1000))
-
-	return time.Millisecond * time.Duration(350+rand.Intn(200))
-}
-
 // 这个是只给tester调的
 // return currentTerm and whether this server
 // believes it is the leader.
@@ -157,9 +148,21 @@ func (rf *Raft) persist() {
 	e.Encode(rf.currentTerm) // 持久化任期
 	e.Encode(rf.votedFor)    // 持久化votedFor
 	e.Encode(rf.log)         // 持久化日志
+	e.Encode(rf.snapshotLastIncludeIndex)
+	e.Encode(rf.snapshotLastIncludeTerm)
 	data := w.Bytes()
-	go rf.persister.SaveRaftState(data)
-	//DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
+
+	//go rf.persister.Save(data, rf.snapshot)
+	if rf.snapshotLastIncludeIndex > 0 {
+		rf.persister.SaveStateAndSnapshot(data, rf.snapshot)
+	} else {
+		rf.persister.SaveRaftState(data)
+	}
+	//go rf.persister.SaveRaftState(data)
+	////DPrintf(100, "%v: persist rf.currentTerm=%v rf.voteFor=%v rf.log=%v\n", rf.SayMeL(), rf.currentTerm, rf.votedFor, rf.log)
+	//if rf.snapshotLastIncludeIndex > 0 {
+	//	go rf.persister.Save()
+	//}
 }
 
 // restore previously persisted state.
@@ -169,8 +172,8 @@ func (rf *Raft) readPersist() {
 	if stateData == nil || len(stateData) < 1 { // bootstrap without any state?
 		return
 	}
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	// Your code here (2C).
 	if stateData != nil && len(stateData) > 0 { // bootstrap without any state?
 		r := bytes.NewBuffer(stateData)
@@ -178,12 +181,18 @@ func (rf *Raft) readPersist() {
 		rf.votedFor = 0 // in case labgob waring
 		if d.Decode(&rf.currentTerm) != nil ||
 			d.Decode(&rf.votedFor) != nil ||
-			d.Decode(&rf.log) != nil {
+			d.Decode(&rf.log) != nil ||
+			d.Decode(&rf.snapshotLastIncludeIndex) != nil ||
+			d.Decode(&rf.snapshotLastIncludeTerm) != nil {
 			//   error...
 			DPrintf(999, "%v: readPersist decode error\n", rf.SayMeL())
 			panic("")
 		}
 	}
+	rf.snapshot = rf.persister.ReadSnapshot()
+	rf.commitIndex = rf.snapshotLastIncludeIndex
+	rf.lastApplied = rf.snapshotLastIncludeIndex
+
 }
 
 // example code to send a RequestVoteRPC to a server.
@@ -292,18 +301,21 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-// // the service says it has created a snapshot that has
-// // all info up to and including index. this means the
-// // service no longer needs the log through (and including)
-// // that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
-
+type RequestInstallSnapShotArgs struct {
+	Term             int
+	LeaderId         int
+	LastIncludeIndex int
+	LastIncludeTerm  int
+	Snapshot         []byte
+}
+type RequestInstallSnapShotReply struct {
+	Term int
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	rf.resetElectionTimer()
 	if rf.state != Leader {
 		return
 	}
@@ -382,9 +394,7 @@ func (rf *Raft) StartAppendEntries(heart bool) {
 
 // nextIndex收敛速度优化：nextIndex跳跃算法，需搭配HandleAppendEntriesRPC2方法使用
 func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
-	rf.mu.Lock()
-	rf.resetElectionTimer()
-	rf.mu.Unlock()
+
 	if heart {
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
@@ -396,7 +406,36 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		args.LeaderTerm = rf.currentTerm
 		DPrintf(111, "\n %d is a leader, ready sending heartbeart to follower %d....", rf.me, targetServerId)
 		rf.mu.Unlock()
-		rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
+		ok := rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
+		rf.mu.Lock()
+
+		if !ok {
+			// rpc通信失败就返回
+			rf.mu.Unlock()
+			return
+		}
+		if reply.FollowerTerm < rf.currentTerm {
+			// 丢弃旧rpc的响应
+			rf.mu.Unlock()
+			return
+		}
+		if reply.FollowerTerm > rf.currentTerm {
+			// 从节点任期比自己大就变为follower
+			rf.currentTerm = reply.FollowerTerm
+			rf.votedFor = None
+			rf.state = Follower
+			// follower身份有改变需要持久化
+			rf.persist()
+			return
+		}
+
+		// 响应成功则什么不用做
+		if reply.Success {
+			rf.mu.Unlock()
+			return
+		}
+
+		rf.mu.Unlock()
 		// 发送心跳包
 		return
 	} else {
@@ -410,6 +449,8 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
 			DPrintf(111, "此时 %d 节点的nextIndex为%d,LastLogIndex为 %d, 最后一项日志为：\n", rf.me, rf.peerTrackers[rf.me].nextIndex,
 				rf.log.LastLogIndex)
+			go rf.InstallSnapshot(targetServerId)
+			rf.mu.Unlock()
 			return
 		}
 		args.LeaderTerm = rf.currentTerm
@@ -455,10 +496,13 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 
 		//reply.Success is false
 		if rf.log.empty() { //判掉为空的情况 方便后面讨论
-			//go rf.InstallSnapshot(serverId)
+			go rf.InstallSnapshot(targetServerId)
+
 			return
 		}
 		if reply.PrevLogIndex+1 < rf.log.FirstLogIndex {
+			go rf.InstallSnapshot(targetServerId)
+
 			return
 		}
 
@@ -474,14 +518,20 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			for PrevIndex >= rf.log.FirstLogIndex && rf.getEntryTerm(PrevIndex) == rf.getEntryTerm(reply.PrevLogIndex) {
 				PrevIndex--
 			}
+			if PrevIndex+1 < rf.log.FirstLogIndex {
+				if rf.log.FirstLogIndex > 1 {
+					go rf.InstallSnapshot(targetServerId)
+					return
+				}
+			}
 			rf.peerTrackers[targetServerId].nextIndex = PrevIndex + 1
 		}
 	}
 }
 
 func (rf *Raft) SayMeL() string {
-	//return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
-	return "success"
+	return fmt.Sprintf("[Server %v as %v at term %v]", rf.me, rf.state, rf.currentTerm)
+	//return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
@@ -591,10 +641,9 @@ func (rf *Raft) ticker() {
 func (rf *Raft) getLastEntryTerm() int {
 	if rf.log.LastLogIndex >= rf.log.FirstLogIndex {
 		return rf.log.getOneEntry(rf.log.LastLogIndex).Term
+	} else {
+		return rf.snapshotLastIncludeTerm
 	}
-	//else {
-	//	return rf.snapshotLastIncludeTerm
-	//}
 	return -1
 
 }

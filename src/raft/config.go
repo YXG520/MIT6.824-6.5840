@@ -593,7 +593,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			// 为什么是2s内呢？因为正常情况下2s内一定能确认所有的节点都能够提交成功
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
-				DPrintf(500, "cnt that servers has commited the cmd %v:%d with the input cmd %v\n", cmd1, nd, cmd)
+				DPrintf(500, "cnt that servers has committed the cmd %v:%d with the input cmd %v\n", cmd1, nd, cmd)
 				// 如果是则比较在这个索引位置上各节点提交的日志是否和给定的日志相同，如果相同直接返回索引
 				if nd > 0 && nd >= expectedServers {
 					// committed

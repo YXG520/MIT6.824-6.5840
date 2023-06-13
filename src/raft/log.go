@@ -26,6 +26,7 @@ func (log *Log) getRealIndex(index int) int {
 	return index - log.FirstLogIndex
 }
 func (log *Log) getOneEntry(index int) *Entry {
+
 	return &log.Entries[log.getRealIndex(index)]
 }
 
@@ -51,9 +52,9 @@ func (rf *Raft) getEntryTerm(index int) int {
 	if index == 0 {
 		return 0
 	}
-	//if index == rf.log.FirstLogIndex-1 {
-	//	return rf.snapshotLastIncludeTerm
-	//}
+	if index == rf.log.FirstLogIndex-1 {
+		return rf.snapshotLastIncludeTerm
+	}
 	if rf.log.FirstLogIndex <= rf.log.LastLogIndex {
 		return rf.log.getOneEntry(index).Term
 	}
