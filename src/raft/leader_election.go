@@ -90,8 +90,6 @@ func (rf *Raft) becomeCandidate() {
 	rf.state = Candidate
 	rf.currentTerm++
 	rf.votedFor = rf.me
-	rf.persist()
-
 }
 
 func (rf *Raft) becomeLeader() {
