@@ -190,12 +190,12 @@ func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
 
 # 3 本项目一些具体的快照逻辑
 
-## snapshot函数的作用
+## 3.1 snapshot函数的作用
 > 这是leader应用快照以及发送快照给所有从节点的入口函数，该函数由tester 测试程序调用，
 > tester负责将快照好的数据传递给leader主机，leader更新完自己的日志FirstLogIndex
 > 信息以及对快照进行持久化之后就会将快照数据传递给所有从节点的。
 
-## snapshot函数中的leader节点应用快照信息的流程
+## 3.2 snapshot函数中的leader节点应用快照信息的流程
 
 leader节点收到快照后的步骤大概是
 1. 更新快照信息,lastIncludeIndex,lastIncludeTerm以及snapshot
@@ -263,7 +263,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	}
 }
 ```
-## 从节点收到leader的快照后应该执行的处理逻辑
+## 3.3 从节点收到leader的快照后应该执行的处理逻辑
 1. 判断任期，请求任期小于自己则返回
 2. 判断请求携带的lastIncludeIndex是否大于自身的lastIncludeIndex，
    大于则进行3，否则返回
@@ -274,19 +274,33 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 更具体地可以参考HandleRequestInstallSnapshot方法
 
-## 主结点发送快照给从节点并且收到从节点的响应后如何操作？
+## 3.4 主结点发送快照给从节点并且收到从节点的响应后如何操作？
 1. 如果从节点的任期大于自己的，则转变为follower并且return
 2. 否则说明从节点接受了快照，此时leader需要更新对应从节点的数据结构的nextIndex
    和matchIndex分别为lastIncludeIndex+1和lastIncludeIndex
 3. 提交该matchIndex
 
-## 本项目中，哪些时候应该leader应该往从结点中发送快照信息
->
+## 3.5 本项目中，哪些时候应该leader应该往从结点中发送快照信息
+> 参考6和代码
 
-## 本项目保存状态机信息，配置元数据，以及日志索引及任期号作为快照的时候，具体怎么保存？
->
+## 3.6 本项目保存状态机信息，配置元数据，以及日志索引及任期号作为快照的时候，具体怎么保存？
+> 持久化的时候会将相应的字段及其数据封装到二进制流中，宕机重启的节点会读取持久化的二进制流并且解析出相应的字段
 
-## 为什么本项目中关于 if rf.state != Leader在枷锁后都需要再判断一次？
+## 3.7 为什么本项目中关于 if rf.state != Leader在许多地方加锁后都需要再判断一次？
+> 在进行投票前/收到投票后（对应StartElection方法），发送心跳前/收到心跳后（AppendEntries），
+> 发送快照前/收到快照响应后（installSnapshot），以及发送日志复制前/收到复制响应后（AppendEntries），
+> 都需要在加锁的情况下判断自身是否是leader节点，为什么呢，这是因为锁粒度导致发送rpc的过程之前释放了锁，
+> 这个过程中就有可能产生raft节点角色的变更
+
+## 3.8 本lab中有哪些地方涉及到丢弃旧rpc的判断？
+
+> 收到投票后（对应StartElection方法），收到心跳后（AppendEntries），收到快照响应后（installSnapshot）
+> 以及收到复制响应后（AppendEntries）。
+> 
+> 因为上一个任期的rpc响应可能因为延迟到这个任期才到达leader节点，为了不干扰当前任期的投票/日志复制/快照同步
+> 操作，就需要识别并且丢弃。
+> 
+> 因为发出的rpc以及响应的rpc必须在同一个任期内，所以可以根据任期号的大小来判定是否是旧rpc
 
 # 4 日志复制的过程和快照发送与生成的关系
 
@@ -302,7 +316,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 ## 5.1 每次持久化时，选择对日志持久化呢还是对快照持久化？怎么选?
 
-![img.png](img.png)
+![img.png](images/img_10.png)
 
 一般肯定是开两个线程分别对日志和快照进行持久化，但是这里只提供一个持久化入口，
 所以需要我们组合一下持久化日志和快照
@@ -315,8 +329,10 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 # 6 发送快照上 是要单独开一个定时任务去执行嘛
 
-![img_1.png](img_1.png)
+![img_1.png](images/img_11.png)
 
 
 # 7 当主节点发送一个快照到从节点后，从节点的日志为空怎么办？
-> 
+> 要看leader节点发送过来的参数PrevLogIndex是不是等价于自己的lastLogIndex，
+> 如果是则返回成功，否则返回失败，PrevLogIndex大于或者小于lastLogIndex都不行，
+> 会造成日志重复或者日志缺失
