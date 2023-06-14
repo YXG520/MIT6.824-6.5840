@@ -26,6 +26,7 @@ func (log *Log) getRealIndex(index int) int {
 	return index - log.FirstLogIndex
 }
 func (log *Log) getOneEntry(index int) *Entry {
+
 	return &log.Entries[log.getRealIndex(index)]
 }
 

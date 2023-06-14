@@ -6,36 +6,54 @@ The Lab2C's realization of MIT6.5840(also early called 6.824) Distributed System
 # 1 关于raft快照的一些Q&A
 
 ## 1.1 raft为什么要进行快照？
-![img.png](img.png)
+![images/img.png](images/img.png)
 
 ## 1.2 应该在什么时候进行快照呢
-![img_1.png](img_1.png)
+![images/img_1.png](images/img_1.png)
 
 ## 1.3 如何进行快照
 
-![img_2.png](img_2.png)
+![images/img_2.png](images/img_2.png)
 
 
 ## 1.4 如果需要给raft增加快照功能，是不是相当于给状态机也做了快照？
-![img_4.png](img_4.png)
+![images/img_4.png](images/img_4.png)
 
 ## 1.5 raft持久化包括快照吗
 
-![img_5.png](img_5.png)
+![images/img_5.png](images/img_5.png)
 
 ## 1.6 快照的时候会备份保存哪些数据
-![img_3.png](img_3.png)
+![images/img_3.png](images/img_3.png)
 
 > 注意：该项目的快照的具体数据由tester实现，但是同步快照到从节点，从节点更新快照，
 > 宕机后从快照中恢复数据（从持久化的快照中恢复数据是通过调用API方法做到）由我们实现
 ## 1.7 如果节点宕机，是读取持久化的数据时，是执行日志还是读取快照？
-![img_6.png](img_6.png)
+![images/img_6.png](images/img_6.png)
 
 ## 1.8 raft系统的快照的日志索引一般是小于等于leader的lastApplied字段吗？
-![img_7.png](img_7.png)
+![images/img_7.png](images/img_7.png)
 
 ## 1.9 leader节点地lastApplied字段有可能比从节点地该字段小吗
-![img_8.png](img_8.png)
+![images/img_8.png](images/img_8.png)
+
+## 1.10 leader接收快照后，rf.commitIndex和rf.lastApplied字段如何修改
+
+![img.png](images/img_9.png)
+
+> 为什么一定要设置为不小于lastIncludedIndex的值呢？
+> 答：因为有可能在执行快照到发生故障之前，节点可能会写入新的日志并且同步到多数节点当中，
+> 并且也有可能应用到状态机中，这样rf.commitIndex和rf.lastApplied就会被更新，其值一定大于
+> lastIncludedIndex，所以我们可以取两者之间最大值，或者不用设置也可以，因为这两个值会在leader
+> 向从节点同步日志的时候自动更新。
+
+```go
+	rf.commitIndex = max(rf.commitIndex, index)
+	rf.lastApplied = max(rf.lastApplied, index)
+
+```
+
+
 # 2 解析现有的代码结构和测试逻辑
 
 ## 2.1 本项目的快照的哪些功能需要我们实现呢？
@@ -47,8 +65,8 @@ The Lab2C's realization of MIT6.5840(also early called 6.824) Distributed System
 
 ## 2.2 这里的Snapshot方法体内需要编写什么代码？
 > 我们看到Snapshot方法仅被一个config文件里的applierSnap方法调用，而applierSnap
-> 方法用于被tester周期性的执行，
-> 
+> 方法用于被tester周期性的执行，生成快照并且发送给从节点
+>
 我们看看applierSnap方法体：
 
 ```go
@@ -103,6 +121,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			cfg.mu.Unlock()
 
 			if (m.CommandIndex+1)%SnapShotInterval == 0 {
+				// 开始生成快照
 				w := new(bytes.Buffer)
 				e := labgob.NewEncoder(w)
 				e.Encode(m.CommandIndex)
@@ -111,6 +130,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 					xlog = append(xlog, cfg.logs[i][j])
 				}
 				e.Encode(xlog)
+				// 将快照发送给节点
 				rf.Snapshot(m.CommandIndex, w.Bytes())
 			}
 		} else {
@@ -127,14 +147,55 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 
 ```
 
+## 2.3 从snapcommon方法解析整个2D的测试逻辑
+
+> 首先可以看到2D的大多数测试点都调用了此方法，所以我们着重分析它
+
+这里为了验证日志是否从leader节点同步了大部分日志给从节点，调用的依然是和2B一样的验证方法，cfg.one以及cfg.ncommitted，
+
+点进去cfg.one()->cfg.ncommitted()-> cfg.logs[i][j]
+
+通过我们发现发送快照的来源是 cfg.logs[i][j]， 然后又从config.go文件中查找到一个叫ingestSnap的
+
+方法会读取快照然后恢复状态机，这里的快照数据是持久化时产生的。
+
+```go
+// returns "" or error string
+func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
+	if snapshot == nil {
+		log.Fatalf("nil snapshot")
+		return "nil snapshot"
+	}
+	r := bytes.NewBuffer(snapshot)
+	d := labgob.NewDecoder(r)
+	var lastIncludedIndex int
+	var xlog []interface{}
+	if d.Decode(&lastIncludedIndex) != nil ||
+		d.Decode(&xlog) != nil {
+		log.Fatalf("snapshot decode error")
+		return "snapshot Decode() error"
+	}
+	if index != -1 && index != lastIncludedIndex {
+		err := fmt.Sprintf("server %v snapshot doesn't match m.SnapshotIndex", i)
+		return err
+	}
+	cfg.logs[i] = map[int]interface{}{}
+	for j := 0; j < len(xlog); j++ {
+		cfg.logs[i][j] = xlog[j]
+	}
+	cfg.lastApplied[i] = lastIncludedIndex
+	return ""
+}
+```
+
 # 3 本项目一些具体的快照逻辑
 
-## snapshot函数的作用
-> 这是leader应用快照以及发送快照给所有从节点的入口函数，该函数由tester调用，
+## 3.1 snapshot函数的作用
+> 这是leader应用快照以及发送快照给所有从节点的入口函数，该函数由tester 测试程序调用，
 > tester负责将快照好的数据传递给leader主机，leader更新完自己的日志FirstLogIndex
 > 信息以及对快照进行持久化之后就会将快照数据传递给所有从节点的。
 
-## snapshot函数中的leader节点应用快照信息的流程
+## 3.2 snapshot函数中的leader节点应用快照信息的流程
 
 leader节点收到快照后的步骤大概是
 1. 更新快照信息,lastIncludeIndex,lastIncludeTerm以及snapshot
@@ -202,7 +263,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	}
 }
 ```
-## 从节点收到leader的快照后应该执行的处理逻辑
+## 3.3 从节点收到leader的快照后应该执行的处理逻辑
 1. 判断任期，请求任期小于自己则返回
 2. 判断请求携带的lastIncludeIndex是否大于自身的lastIncludeIndex，
    大于则进行3，否则返回
@@ -213,16 +274,65 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 更具体地可以参考HandleRequestInstallSnapshot方法
 
-## 主结点发送快照给从节点并且收到从节点的响应后如何操作？
+## 3.4 主结点发送快照给从节点并且收到从节点的响应后如何操作？
 1. 如果从节点的任期大于自己的，则转变为follower并且return
 2. 否则说明从节点接受了快照，此时leader需要更新对应从节点的数据结构的nextIndex
    和matchIndex分别为lastIncludeIndex+1和lastIncludeIndex
 3. 提交该matchIndex
 
-## 本项目中，哪些时候应该leader应该往从结点中发送快照信息
-> 
+## 3.5 本项目中，哪些时候应该leader应该往从结点中发送快照信息
+> 参考6和代码
 
-## 3.1 本项目保存状态机信息，配置元数据，以及日志索引及任期号作为快照的时候，具体怎么保存？
-> 
+## 3.6 本项目保存状态机信息，配置元数据，以及日志索引及任期号作为快照的时候，具体怎么保存？
+> 持久化的时候会将相应的字段及其数据封装到二进制流中，宕机重启的节点会读取持久化的二进制流并且解析出相应的字段
 
-## 为什么本项目中关于 if rf.state != Leader在枷锁后都需要再判断一次？
+## 3.7 为什么本项目中关于 if rf.state != Leader在许多地方加锁后都需要再判断一次？
+> 在进行投票前/收到投票后（对应StartElection方法），发送心跳前/收到心跳后（AppendEntries），
+> 发送快照前/收到快照响应后（installSnapshot），以及发送日志复制前/收到复制响应后（AppendEntries），
+> 都需要在加锁的情况下判断自身是否是leader节点，为什么呢，这是因为锁粒度导致发送rpc的过程之前释放了锁，
+> 这个过程中就有可能产生raft节点角色的变更
+
+## 3.8 本lab中有哪些地方涉及到丢弃旧rpc的判断？
+
+> 收到投票后（对应StartElection方法），收到心跳后（AppendEntries），收到快照响应后（installSnapshot）
+> 以及收到复制响应后（AppendEntries）。
+> 
+> 因为上一个任期的rpc响应可能因为延迟到这个任期才到达leader节点，为了不干扰当前任期的投票/日志复制/快照同步
+> 操作，就需要识别并且丢弃。
+> 
+> 因为发出的rpc以及响应的rpc必须在同一个任期内，所以可以根据任期号的大小来判定是否是旧rpc
+
+# 4 日志复制的过程和快照发送与生成的关系
+
+> 这里生成快照由tester程序帮我做，但是发送快照到从节点需要我们自己想，
+> 这里一般是主从日志复制的交互过程中会产生发送快照的操作，
+> （1）如果从节点
+> 对appendEntries RPC的响应体中的prevLogIndex字段小于leader节点
+> 的lastIncludedIndex字段，则需要将快照发送给从节点，
+> （2）如果主结点的日志被清空（可能是因为执行了快照操作），也需要执行
+> 一次快照操作。
+
+# 5 持久化和快照的关系
+
+## 5.1 每次持久化时，选择对日志持久化呢还是对快照持久化？怎么选?
+
+![img.png](images/img_10.png)
+
+一般肯定是开两个线程分别对日志和快照进行持久化，但是这里只提供一个持久化入口，
+所以需要我们组合一下持久化日志和快照
+
+但是在本lab的persist方法中，我们还是需要探讨一下什么时候持久化日志，什么
+时候持久化快照，什么时候两个都做，因为是相当于单线程处理两种持久化的事情，
+
+这里会依据持久化索引lastIncludedIndex，如果大于0则两者都持久化（
+说明有快照），否则只持久化日志, 
+
+# 6 发送快照上 是要单独开一个定时任务去执行嘛
+
+![img_1.png](images/img_11.png)
+
+
+# 7 当主节点发送一个快照到从节点后，从节点的日志为空怎么办？
+> 要看leader节点发送过来的参数PrevLogIndex是不是等价于自己的lastLogIndex，
+> 如果是则返回成功，否则返回失败，PrevLogIndex大于或者小于lastLogIndex都不行，
+> 会造成日志重复或者日志缺失

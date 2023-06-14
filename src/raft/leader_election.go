@@ -34,7 +34,7 @@ func (rf *Raft) StartElection() {
 			ok := rf.sendRequestVote(serverId, &args, &reply)
 			//log.Printf("[%d] finish sending request vote to %d", rf.me, serverId)
 			if !ok || !reply.VoteGranted {
-				//DPrintf(101, "拉票节点 %v: cannot be given a vote by node %v at args.term=%v\n", rf.SayMeL(), serverId, args.Term)
+				DPrintf(101, "%v: cannot be given a vote by node %v at reply.term=%v\n", rf.SayMeL(), serverId, reply.Term)
 				return
 			}
 
@@ -43,6 +43,16 @@ func (rf *Raft) StartElection() {
 			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
 
 			if reply.Term < rf.currentTerm {
+				DPrintf(111, "%v: 来自%d 在任期 %d 的旧投票，拒绝接受", rf.SayMeL(), serverId, reply.Term)
+				return
+			}
+			// 角色变换
+			if reply.Term > rf.currentTerm {
+				DPrintf(111, "%v: %d 的任期是 %d, 比我大，变为follower", rf.SayMeL(), serverId, args.Term)
+				rf.state = Follower
+				rf.votedFor = None
+				rf.currentTerm = reply.Term
+				rf.persist()
 				return
 			}
 			// 统计票数
@@ -57,7 +67,7 @@ func (rf *Raft) StartElection() {
 			}
 			//rf.state = Leader // 将自身设置为leader
 			rf.becomeLeader()
-			DPrintf(222, "\n[%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.me, rf.currentTerm, rf.state)
+			DPrintf(222, "\n%v: [%d] got enough votes, and now is the leader(currentTerm=%d, state=%v)!starting to append heartbeat...\n", rf.SayMeL(), rf.me, rf.currentTerm, rf.state)
 			//go rf.StartAppendEntries(true) // 立即开始发送心跳而不是等定时器到期再发送，否则有一定概率在心跳到达从节点之前另一个leader也被选举成功，从而出现了两个leader
 		}(i)
 	}
@@ -77,11 +87,10 @@ func (rf *Raft) resetElectionTimer() {
 }
 
 func (rf *Raft) becomeCandidate() {
+	rf.resetElectionTimer()
 	rf.state = Candidate
 	rf.currentTerm++
-	//rf.votedMe = make([]bool, len(rf.peers))
 	rf.votedFor = rf.me
-	rf.resetElectionTimer()
 }
 
 func (rf *Raft) becomeLeader() {
@@ -112,7 +121,10 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 		rf.votedFor = None
 		rf.currentTerm = args.LeaderTerm
 		reply.FollowerTerm = rf.currentTerm
+		//rf.persist()
 	}
+	rf.persist()
+
 	// 重置自身的选举定时器，这样自己就不会重新发出选举需求（因为它在ticker函数中被阻塞住了）
 }
 
@@ -134,6 +146,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = None
 		rf.state = Follower
 		reply.Term = rf.currentTerm
+		rf.persist()
 	}
 	DPrintf(500, "%v: reply to %v myLastLogterm=%v myLastLogIndex=%v args.LastLogTerm=%v args.LastLogIndex=%v\n",
 		rf.SayMeL(), args.CandidateId, rf.getLastEntryTerm(), rf.log.LastLogIndex, args.LastLogTerm, args.LastLogIndex)
@@ -151,8 +164,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.resetElectionTimer() //自己的票已经投出时就转为follower状态
 		DPrintf(111, "%v: 投出同意票给节点%d", rf.SayMeL(), args.CandidateId)
 		rf.persist()
+
 	} else {
 		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
 		DPrintf(111, "%v: 投出反对票给节点%d", rf.SayMeL(), args.CandidateId)
 	}
+
 }
