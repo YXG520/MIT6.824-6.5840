@@ -1,5 +1,5 @@
 
-<h1 align="center">MIT6.5840（6.824）-Distributed-System Lab2C</h1>
+<h1 align="center">MIT6.5840（6.824）-Distributed-System Lab2D</h1>
 
 The Lab2C's realization of MIT6.5840(also early called 6.824) Distributed System in Spring 2023
 
