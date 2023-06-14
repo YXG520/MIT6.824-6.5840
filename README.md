@@ -1,7 +1,7 @@
 
 <h1 align="center">MIT6.5840（6.824）-Distributed-System Lab2D</h1>
 
-The Lab2C's realization of MIT6.5840(also early called 6.824) Distributed System in Spring 2023
+The Lab2D's realization of MIT6.5840(also early called 6.824) Distributed System in Spring 2023D
 
 # 1 关于raft快照的一些Q&A
 
