@@ -194,6 +194,7 @@ func (rf *Raft) readPersist() {
 	rf.snapshot = rf.persister.ReadSnapshot()
 	rf.commitIndex = rf.snapshotLastIncludeIndex
 	rf.lastApplied = rf.snapshotLastIncludeIndex
+	DPrintf(111, "%v: 节点被宕机重启，成功加载获取持久化数据", rf.SayMeL())
 
 }
 
@@ -504,7 +505,8 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		if reply.Success {
 			rf.peerTrackers[targetServerId].nextIndex = args.PrevLogIndex + len(args.Entries) + 1
 			rf.peerTrackers[targetServerId].matchIndex = args.PrevLogIndex + len(args.Entries)
-			DPrintf(111, "%v: 更新节点%d的日志成功，准备提交日志...\n", rf.SayMeL(), targetServerId)
+			DPrintf(111, "%v: 更新节点%d的日志成功，nextIndex更新为%d, matchIndex更新为%d, 准备尝试一次提交日志...\n", rf.SayMeL(), targetServerId, rf.peerTrackers[targetServerId].nextIndex,
+				rf.peerTrackers[targetServerId].matchIndex)
 			rf.tryCommitL(rf.peerTrackers[targetServerId].matchIndex)
 			return
 		} else {
@@ -663,10 +665,8 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 			return
 		}
 
-		//reply.Success is false
 		if rf.log.empty() { //判掉为空的情况 方便后面讨论
 			go rf.InstallSnapshot(targetServerId)
-
 			return
 		}
 		if reply.PrevLogIndex+1 < rf.log.FirstLogIndex {
@@ -701,6 +701,7 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 }
 
 func (rf *Raft) SayMeL() string {
+
 	//return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
 	//	rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
 	return "success"
@@ -713,10 +714,7 @@ func (rf *Raft) sendMsgToTester() {
 	for !rf.killed() {
 		DPrintf(11, "%v: it is being blocked...", rf.SayMeL())
 		rf.applyCond.Wait()
-		//
-		//if rf.lastApplied < rf.log.FirstLogIndex {
-		//	rf.lastApplied = rf.log.FirstLogIndex
-		//}
+
 		for rf.lastApplied+1 <= rf.commitIndex {
 			i := rf.lastApplied + 1
 			rf.lastApplied++
@@ -766,12 +764,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.snapshot = nil
 	rf.snapshotLastIncludeIndex = 0
 	rf.snapshotLastIncludeTerm = 0
-
-	// initialize from state persisted before a crash
-	rf.readPersist()
-	rf.applyHelper = NewApplyHelper(applyCh, rf.lastApplied)
+	// 初始化状态机相关参数
 	rf.commitIndex = 0
 	rf.lastApplied = 0
+
+	// initialize from state persisted before a crash
+	rf.readPersist() // 持久化一定要在commitIndex,lastApplied,snapshotLastIncludeTerm,snapshotLastIncludeIndex 初始化之后执行，否则持久化后恢复的数据会被覆盖为0
+	rf.applyHelper = NewApplyHelper(applyCh, rf.lastApplied)
+
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers)) //对等节点追踪器
 	rf.applyCond = sync.NewCond(&rf.mu)
 

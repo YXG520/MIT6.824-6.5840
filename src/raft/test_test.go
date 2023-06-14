@@ -1141,14 +1141,18 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		if disconnect {
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
+			DPrintf(111, "%v: 成功将节点断联并且日志仍被多数节点复制", cfg.rafts[victim].SayMeL())
 		}
 		if crash {
 			cfg.crash1(victim)
+			DPrintf(111, "%d 节点已经被下线", victim)
 			cfg.one(rand.Int(), servers-1, true)
+			DPrintf(111, "成功将节点%d下线", victim)
 		}
 
 		// perhaps send enough to get a snapshot
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
+		DPrintf(111, "发送足够的日志以便后续校验其正确性")
 		for i := 0; i < nn; i++ {
 			cfg.rafts[sender].Start(rand.Int())
 		}
@@ -1164,6 +1168,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 		} else {
 			cfg.one(rand.Int(), servers-1, true)
+			DPrintf(111, "快照或者日志已被大多数节点接收")
 		}
 
 		if cfg.LogSize() >= MAXLOGSIZE {
@@ -1178,9 +1183,12 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 		if crash {
 			cfg.start1(victim, cfg.applierSnap)
+			DPrintf(111, "重新上线%d节点之前成功应用快照", victim)
 			cfg.connect(victim)
+			DPrintf(111, "%v: 节点上线成功！", cfg.rafts[victim].SayMeL())
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
+			DPrintf(111, "%v：节点%d重连后, 产生的leader为%d", cfg.rafts[leader1].SayMeL(), victim, leader1)
 		}
 	}
 	cfg.end()
