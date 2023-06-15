@@ -49,7 +49,9 @@ package labrpc
 //   pass svc to srv.AddService()
 //
 
-import "MIT6.824-6.5840/labgob"
+import (
+	"MIT6.824-6.5840/labgob"
+)
 import "bytes"
 import "reflect"
 import "sync"
@@ -116,8 +118,12 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 		if err := rd.Decode(reply); err != nil {
 			log.Fatalf("ClientEnd.Call(): decode reply: %v\n", err)
 		}
+		//fmt.Printf("get reply successfully....\n")
+
 		return true
 	} else {
+		//fmt.Printf("the reply is false....\n")
+
 		return false
 	}
 }

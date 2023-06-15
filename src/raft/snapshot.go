@@ -96,7 +96,7 @@ func (rf *Raft) RequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *
 				SnapshotIndex: rf.snapshotLastIncludeIndex,
 			}
 			DPrintf(800, "%v: next apply snapshot rf.snapshot.LastIncludeIndex=%v rf.snapshot.LastIncludeTerm=%v\n", rf.SayMeL(), rf.snapshotLastIncludeIndex, rf.snapshotLastIncludeTerm)
-			rf.applyHelper.tryApply(&msg)
+			rf.ApplyHelper.tryApply(&msg)
 			rf.lastApplied = args.LastIncludeIndex
 		}
 		rf.commitIndex = max(rf.commitIndex, args.LastIncludeIndex)

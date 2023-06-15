@@ -7,7 +7,7 @@ import (
 )
 
 // Debugging
-const Debug_level = 100
+const Debug_level = 99
 
 func DPrintf(level int, format string, a ...interface{}) (n int, err error) {
 	if Debug_level <= level {
@@ -80,9 +80,10 @@ func (applyHelper *ApplyHelper) applier() {
 		msg := applyHelper.q[0]
 		applyHelper.q = applyHelper.q[1:]
 		applyHelper.mu.Unlock()
-		DPrintf(8, "applyhelper start apply msg index=%v ", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
+		DPrintf(80000, "applyhelper start apply msg index=%v ", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
 		applyHelper.applyCh <- msg
-		DPrintf(8, "applyhelper done apply msg index=%v", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
+		//<-applyHelper.applyCh
+		DPrintf(80000, "applyhelper done apply msg index=%v", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
 	}
 }
 func (applyHelper *ApplyHelper) tryApply(msg *ApplyMsg) bool {

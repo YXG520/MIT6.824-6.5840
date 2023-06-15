@@ -20,6 +20,7 @@ package raft
 import (
 	"MIT6.824-6.5840/labgob"
 	"bytes"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -81,7 +82,7 @@ type Raft struct {
 	commitIndex int // commitIndex是本机提交的
 	lastApplied int // lastApplied是该日志在所有的机器上都跑了一遍后才会更新？
 
-	applyHelper *ApplyHelper
+	ApplyHelper *ApplyHelper
 	applyCond   *sync.Cond
 
 	snapshot                 []byte
@@ -293,7 +294,7 @@ func (rf *Raft) Kill() {
 	// Your code here, if desired.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	rf.applyHelper.Kill()
+	rf.ApplyHelper.Kill()
 	DPrintf(111, "%v : my applyHelper is killed!!", rf.SayMeL())
 
 	rf.state = Follower
@@ -702,9 +703,9 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 
 func (rf *Raft) SayMeL() string {
 
-	//return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
-	//	rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
-	return "success"
+	return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
+		rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
+	//return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
@@ -732,7 +733,7 @@ func (rf *Raft) sendMsgToTester() {
 			DPrintf(111, "%s: next apply index=%v lastApplied=%v len entries=%v "+
 				"LastLogIndex=%v cmd=%v\n", rf.SayMeL(), i, rf.lastApplied, len(rf.log.Entries),
 				rf.log.LastLogIndex, rf.log.getOneEntry(i).Command)
-			rf.applyHelper.tryApply(&msg)
+			rf.ApplyHelper.tryApply(&msg)
 		}
 	}
 }
@@ -770,7 +771,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist() // 持久化一定要在commitIndex,lastApplied,snapshotLastIncludeTerm,snapshotLastIncludeIndex 初始化之后执行，否则持久化后恢复的数据会被覆盖为0
-	rf.applyHelper = NewApplyHelper(applyCh, rf.lastApplied)
+	rf.ApplyHelper = NewApplyHelper(applyCh, rf.lastApplied)
 
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers)) //对等节点追踪器
 	rf.applyCond = sync.NewCond(&rf.mu)

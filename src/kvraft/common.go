@@ -4,6 +4,8 @@ const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongLeader = "ErrWrongLeader"
+
+	MapQueryFail = "MapQueryFail"
 )
 
 type Err string
@@ -16,6 +18,8 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	ClientId   int
+	ProposalId int // 当前客户端发出的第几个请求
 }
 
 type PutAppendReply struct {
@@ -25,6 +29,9 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	// You'll have to add definitions here.
+	ClientId   int
+	ProposalId int // 当前客户端发出的第几个请求
+
 }
 
 type GetReply struct {
