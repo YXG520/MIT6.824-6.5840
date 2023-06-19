@@ -84,6 +84,8 @@ type ClientEnd struct {
 // the return value indicates success; false means that
 // no reply was received from the server.
 func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bool {
+	//fmt.Printf("call begin...\n")
+
 	req := reqMsg{}
 	req.endname = e.endname
 	req.svcMeth = svcMeth
@@ -100,10 +102,14 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 	//
 	// send the request.
 	//
+	//fmt.Printf("sending the request....\n")
+
 	select {
 	case e.ch <- req:
+		//fmt.Printf("the request has been sent....\n")
 		// the request has been sent.
 	case <-e.done:
+		//fmt.Printf("entire Network has been destroyed....\n")
 		// entire Network has been destroyed.
 		return false
 	}
@@ -111,6 +117,8 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 	//
 	// wait for the reply.
 	//
+	//fmt.Printf("waiting for the channel receiving msgs....\n")
+
 	rep := <-req.replyCh
 	if rep.ok {
 		rb := bytes.NewBuffer(rep.reply)

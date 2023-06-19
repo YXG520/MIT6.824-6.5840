@@ -13,21 +13,21 @@ const (
 )
 
 const (
-	PutOp    string = "PutOp"
-	AppendOp        = "AppendOp"
-	GetOp           = "GetOp"
+	PutOp    OpType = "PutOp"
+	AppendOp OpType = "AppendOp"
+	GetOp    OpType = "GetOp"
 )
 
 // Put or Append
 type PutAppendArgs struct {
-	Key   string
-	Value string
-	Op    string // "Put" or "Append"
+	Key    string
+	Value  string
+	OpType OpType // "Put" or "Append"
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	ClientId int64
-	SeqId    int
+	ClientId    int64
+	SequenceNum int64
 }
 
 type PutAppendReply struct {
@@ -37,9 +37,8 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	// You'll have to add definitions here.
-	ClientId int64
-	SeqId    int // 当前客户端发出的第几个请求
-
+	ClientId    int64
+	SequenceNum int64
 }
 
 type GetReply struct {

@@ -5,14 +5,14 @@ import (
 )
 
 func (rf *Raft) pastHeartbeatTimeout() bool {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	return time.Since(rf.lastHeartbeat) > rf.heartbeatTimeout
 }
 
 func (rf *Raft) resetHeartbeatTimer() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	rf.lastHeartbeat = time.Now()
 }
 
@@ -78,8 +78,8 @@ func (rf *Raft) resetHeartbeatTimer() {
 // nextIndex收敛速度优化：nextIndex跳跃算法
 // 定义一个心跳兼日志同步处理器，这个方法是Candidate和Follower节点的处理
 func (rf *Raft) HandleAppendEntriesRPC(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
-	rf.mu.Lock() // 加接收日志方的锁
-	defer rf.mu.Unlock()
+	rf.Mu.Lock() // 加接收日志方的锁
+	defer rf.Mu.Unlock()
 	reply.FollowerTerm = rf.currentTerm
 	reply.Success = true
 	// 旧任期的leader抛弃掉

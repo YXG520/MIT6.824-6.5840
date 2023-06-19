@@ -62,7 +62,7 @@ func (kv *ShardKV) Kill() {
 // Config.Groups[gid][i] into a labrpc.ClientEnd on which you can
 // send RPCs. You'll need this to send RPCs to other groups.
 //
-// look at client.go for examples of how to use ctrlers[]
+// look at client2.go for examples of how to use ctrlers[]
 // and make_end() to send RPCs to the group owning a specific shard.
 //
 // StartServer() must return quickly, so it should start goroutines

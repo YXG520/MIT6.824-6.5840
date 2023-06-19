@@ -11,8 +11,8 @@ const baseElectionTimeout = 300
 const None = -1
 
 func (rf *Raft) StartElection() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	rf.becomeCandidate()
 	term := rf.currentTerm
 	done := false
@@ -38,8 +38,8 @@ func (rf *Raft) StartElection() {
 				return
 			}
 
-			rf.mu.Lock()
-			defer rf.mu.Unlock()
+			rf.Mu.Lock()
+			defer rf.Mu.Unlock()
 			DPrintf(101, "%v: now receiving a vote from %d with term %d", rf.SayMeL(), serverId, reply.Term)
 
 			if reply.Term < rf.currentTerm {
@@ -74,8 +74,8 @@ func (rf *Raft) StartElection() {
 }
 
 func (rf *Raft) pastElectionTimeout() bool {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	return time.Since(rf.lastElection) > rf.electionTimeout
 }
 
@@ -102,8 +102,8 @@ func (rf *Raft) becomeLeader() {
 
 // 定义一个心跳兼日志同步处理器，这个方法是Candidate和Follower节点的处理
 func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
-	rf.mu.Lock() // 加接收心跳方的锁
-	defer rf.mu.Unlock()
+	rf.Mu.Lock() // 加接收心跳方的锁
+	defer rf.Mu.Unlock()
 	reply.FollowerTerm = rf.currentTerm
 	reply.Success = true
 	// 旧任期的leader抛弃掉
@@ -131,8 +131,8 @@ func (rf *Raft) HandleHeartbeatRPC(args *RequestAppendEntriesArgs, reply *Reques
 // example RequestVoteRPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	reply.VoteGranted = true // 默认设置响应体为投同意票状态
 	reply.Term = rf.currentTerm
 	//竞选leader的节点任期小于等于自己的任期，则反对票(为什么等于情况也反对票呢？因为candidate节点在发送requestVote rpc之前会将自己的term+1)

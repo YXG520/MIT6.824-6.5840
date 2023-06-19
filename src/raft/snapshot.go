@@ -8,8 +8,8 @@ import "fmt"
 // // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	if rf.state != Leader {
 		return
 	}
@@ -54,8 +54,8 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) RequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *RequestInstallSnapShotReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	//defer DPrintf(11, "%v: RequestInstallSnapshot end  args.LeaderId=%v, args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
 	DPrintf(111, "%v: receiving snapshot from LeaderId=%v with args.LastIncludeIndex=%v, args.LastIncludeTerm=%v\n", rf.SayMeL(), args.LeaderId, args.LastIncludeIndex, args.LastIncludeTerm)
 	reply.Term = rf.currentTerm
@@ -109,10 +109,10 @@ func (rf *Raft) InstallSnapshot(serverId int) {
 
 	args := RequestInstallSnapShotArgs{}
 	reply := RequestInstallSnapShotReply{}
-	rf.mu.Lock()
+	rf.Mu.Lock()
 	if rf.state != Leader {
 		DPrintf(111, "%v: 状态已变，不是leader节点，无法发送快照", rf.SayMeL())
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 		return
 	}
 	DPrintf(111, "%v: 准备向节点%d发送快照", rf.SayMeL(), serverId)
@@ -121,15 +121,15 @@ func (rf *Raft) InstallSnapshot(serverId int) {
 	args.LastIncludeIndex = rf.snapshotLastIncludeIndex
 	args.LastIncludeTerm = rf.snapshotLastIncludeTerm
 	args.Snapshot = rf.snapshot
-	rf.mu.Unlock()
+	rf.Mu.Unlock()
 
 	ok := rf.sendRequestInstallSnapshot(serverId, &args, &reply)
 	if !ok {
 		//DPrintf(12, "%v: cannot sendRequestInstallSnapshot to  %v args.term=%v\n", rf.SayMeL(), serverId, args.Term)
 		return
 	}
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 
 	if rf.state != Leader {
 		DPrintf(111, "%v: 因为不是leader，放弃处理%d的快照响应", rf.SayMeL(), serverId)

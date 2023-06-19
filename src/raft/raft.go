@@ -20,7 +20,6 @@ package raft
 import (
 	"MIT6.824-6.5840/labgob"
 	"bytes"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -51,7 +50,7 @@ type ApplyMsg struct {
 
 // 设置状态类型
 const Follower, Candidate, Leader int = 1, 2, 3
-const tickInterval = 70 * time.Millisecond
+const tickInterval = 100 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 
 //var cfgs []config
@@ -59,7 +58,7 @@ const heartbeatTimeout = 150 * time.Millisecond
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+	Mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
@@ -134,8 +133,8 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	term = rf.currentTerm
 	isleader = rf.state == Leader
 	return term, isleader
@@ -259,8 +258,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	term := -1
 	isLeader := true
 	// Your code here (2B).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	term = rf.currentTerm
 	if rf.state != Leader {
 		isLeader = false
@@ -292,8 +291,8 @@ func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 
 	// Your code here, if desired.
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	rf.ApplyHelper.Kill()
 	DPrintf(111, "%v : my applyHelper is killed!!", rf.SayMeL())
 
@@ -317,8 +316,8 @@ type RequestInstallSnapShotReply struct {
 }
 
 func (rf *Raft) StartAppendEntries(heart bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	rf.resetElectionTimer()
 	if rf.state != Leader {
 		return
@@ -402,30 +401,30 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 	if heart {
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		args.LeaderTerm = rf.currentTerm
 		DPrintf(111, "\n %v: %d is a leader, ready sending heartbeart to follower %d....", rf.SayMeL(), rf.me, targetServerId)
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 
 		ok := rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
 
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		if !ok {
 			// rpc通信失败就返回
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		if reply.FollowerTerm < rf.currentTerm {
 			// 丢弃旧rpc的响应
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		if reply.FollowerTerm > rf.currentTerm {
@@ -435,33 +434,33 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			rf.state = Follower
 			// follower身份有改变需要持久化
 			rf.persist()
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 
 		// 响应成功则什么不用做
 		if reply.Success {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 		// 发送心跳包
 		return
 	} else {
 		args := RequestAppendEntriesArgs{}
 		reply := RequestAppendEntriesReply{}
 
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
 		if args.PrevLogIndex+1 < rf.log.FirstLogIndex {
 			DPrintf(111, "%v: 节点%d日志匹配索引为%d更新速度太慢，准备发送快照", rf.SayMeL(), targetServerId, args.PrevLogIndex)
 			go rf.InstallSnapshot(targetServerId)
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		} else {
 			DPrintf(111, "%v: 节点%d日志匹配索引为%d，准备日志复制", rf.SayMeL(), targetServerId, args.PrevLogIndex)
@@ -473,7 +472,7 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 		args.Entries = rf.log.getAppendEntries(args.PrevLogIndex + 1)
 		DPrintf(111, "%v: the len of log entries: %d is ready to send to node %d!!! and the entries are %v\n",
 			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 
 		//fmt.Printf("\n %d is a leader, ready sending log entries to follower %d with args leaderTerm:%d, PrevLogIndex: %d, PrevLogTerm:%d, lastEntry:%v....", rf.me, targetServerId, args.LeaderTerm, args.PrevLogIndex, args.PrevLogTerm, args.Entries[args.PrevLogIndex])
 		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
@@ -483,8 +482,8 @@ func (rf *Raft) AppendEntries(targetServerId int, heart bool) {
 			return
 		}
 
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
+		rf.Mu.Lock()
+		defer rf.Mu.Unlock()
 		if rf.state != Leader {
 			return
 		}
@@ -558,30 +557,30 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 	if heart {
 		reply := RequestAppendEntriesReply{}
 		args := RequestAppendEntriesArgs{}
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		args.LeaderTerm = rf.currentTerm
 		DPrintf(111, "\n %v: %d is a leader, ready sending heartbeart to follower %d....", rf.SayMeL(), rf.me, targetServerId)
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 
 		ok := rf.sendRequestAppendEntries(true, targetServerId, &args, &reply)
 
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		if !ok {
 			// rpc通信失败就返回
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		if reply.FollowerTerm < rf.currentTerm {
 			// 丢弃旧rpc的响应
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		if reply.FollowerTerm > rf.currentTerm {
@@ -591,26 +590,26 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 			rf.state = Follower
 			// follower身份有改变需要持久化
 			rf.persist()
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 
 		// 响应成功则什么不用做
 		if reply.Success {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 		// 发送心跳包
 		return
 	} else {
 		args := RequestAppendEntriesArgs{}
 		reply := RequestAppendEntriesReply{}
 
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		if rf.state != Leader {
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		args.PrevLogIndex = min(rf.log.LastLogIndex, rf.peerTrackers[targetServerId].nextIndex-1)
@@ -618,7 +617,7 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 			DPrintf(111, "此时 %d 节点的nextIndex为%d,LastLogIndex为 %d, 最后一项日志为：\n", rf.me, rf.peerTrackers[rf.me].nextIndex,
 				rf.log.LastLogIndex)
 			go rf.InstallSnapshot(targetServerId)
-			rf.mu.Unlock()
+			rf.Mu.Unlock()
 			return
 		}
 		args.LeaderTerm = rf.currentTerm
@@ -628,7 +627,7 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 		args.Entries = rf.log.getAppendEntries(args.PrevLogIndex + 1)
 		DPrintf(111, "%v: the len of log entries: %d is ready to send to node %d!!! and the entries are %v\n",
 			rf.SayMeL(), len(args.Entries), targetServerId, args.Entries)
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 
 		//fmt.Printf("\n %d is a leader, ready sending log entries to follower %d with args leaderTerm:%d, PrevLogIndex: %d, PrevLogTerm:%d, lastEntry:%v....", rf.me, targetServerId, args.LeaderTerm, args.PrevLogIndex, args.PrevLogTerm, args.Entries[args.PrevLogIndex])
 		ok := rf.sendRequestAppendEntries(false, targetServerId, &args, &reply)
@@ -638,8 +637,8 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 			return
 		}
 
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
+		rf.Mu.Lock()
+		defer rf.Mu.Unlock()
 		if rf.state != Leader {
 			return
 		}
@@ -703,15 +702,15 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 
 func (rf *Raft) SayMeL() string {
 
-	return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
-		rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
-	//return "success"
+	//return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
+	//	rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
+	return "success"
 }
 
 // 通知tester接收这个日志消息，然后供测试使用
 func (rf *Raft) sendMsgToTester() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
 	for !rf.killed() {
 		DPrintf(11, "%v: it is being blocked...", rf.SayMeL())
 		rf.applyCond.Wait()
@@ -774,7 +773,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.ApplyHelper = NewApplyHelper(applyCh, rf.lastApplied)
 
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers)) //对等节点追踪器
-	rf.applyCond = sync.NewCond(&rf.mu)
+	rf.applyCond = sync.NewCond(&rf.Mu)
 
 	//Leader选举协程
 	go rf.ticker()
@@ -786,9 +785,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 func (rf *Raft) ticker() {
 	// 如果这个raft节点没有掉线,则一直保持活跃不下线状态（可以因为网络原因掉线，也可以tester主动让其掉线以便测试）
 	for !rf.killed() {
-		rf.mu.Lock()
+		rf.Mu.Lock()
 		state := rf.state
-		rf.mu.Unlock()
+		rf.Mu.Unlock()
 		switch state {
 		case Follower:
 			//DPrintf(111, "I am %d, a follower with term %d and my dead state is %d", rf.me, rf.currentTerm, rf.dead)

@@ -513,7 +513,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 				cfg.t.Fatalf("committed values do not match: index %v, %v, %v",
 					index, cmd, cmd1)
 			}
-			DPrintf(111, "%v: 在索引为 %d,值为%d的日志项上和leader同步成功...", cfg.rafts[i].SayMeL(), index, cmd1)
+			//DPrintf(111, "%v: 在索引为 %d,值为%d的日志项上和leader同步成功...", cfg.rafts[i].SayMeL(), index, cmd1)
 			count += 1
 			cmd = cmd1
 		} else {
