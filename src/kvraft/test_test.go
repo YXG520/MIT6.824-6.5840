@@ -99,6 +99,8 @@ func check(cfg *config, t *testing.T, ck *Clerk, key string, value string) {
 	if v != value {
 		t.Fatalf("Get(%v): expected:\n%v\nreceived:\n%v", key, value, v)
 	}
+	DPrintf(11111, "get操作检查数据库中键为%v的值%v为正确值,等于%v", key, v, value)
+
 }
 
 // a client runs the function f and then signals it is done
@@ -323,18 +325,19 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		}
 
 		if crash {
-			// log.Printf("shutdown servers\n")
+			//log.Printf("ready to shutdown all servers\n")
 			for i := 0; i < nservers; i++ {
 				cfg.ShutdownServer(i)
 			}
 			// Wait for a while for servers to shutdown, since
 			// shutdown isn't a real crash and isn't instantaneous
 			time.Sleep(electionTimeout)
-			// log.Printf("restart servers\n")
+			//log.Printf("restart all servers\n")
 			// crash and re-start all
 			for i := 0; i < nservers; i++ {
 				cfg.StartServer(i)
 			}
+			//log.Printf("reconnect all servers\n")
 			cfg.ConnectAll()
 		}
 
@@ -346,7 +349,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 			// 	log.Printf("Warning: client %d managed to perform only %d put operations in 1 sec?\n", i, j)
 			// }
 			key := strconv.Itoa(i)
-			// log.Printf("Check %v for client %d\n", j, i)
+			//log.Printf("Check %v for client %d\n", j, i)
 			v := Get(cfg, ck, key, opLog, 0)
 			if !randomkeys {
 				checkClntAppends(t, i, v, j)
@@ -812,14 +815,16 @@ func TestSnapshotRPC3B(t *testing.T) {
 	if sz > 8*maxraftstate {
 		t.Fatalf("logs were not trimmed (%v > 8*%v)", sz, maxraftstate)
 	}
-
+	DPrintf(11111, "检查到主分区的节点已经丢弃大部分旧日志, 并且准备开始新一轮的分区")
 	// now make group that requires participation of
 	// lagging server, so that it has to catch up.
 	cfg.partition([]int{0, 2}, []int{1})
 	{
 		ck1 := cfg.makeClient([]int{0, 2})
+		DPrintf(11111, "成功创建只向由0和2组成的主分区发送消息的客户端")
 		Put(cfg, ck1, "c", "C", nil, -1)
 		Put(cfg, ck1, "d", "D", nil, -1)
+		DPrintf(11111, "成功进行两次put操作")
 		check(cfg, t, ck1, "a", "A")
 		check(cfg, t, ck1, "b", "B")
 		check(cfg, t, ck1, "1", "1")

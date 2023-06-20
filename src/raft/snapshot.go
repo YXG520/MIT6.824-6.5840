@@ -2,10 +2,10 @@ package raft
 
 import "fmt"
 
-// // the service says it has created a snapshot that has
-// // all info up to and including index. this means the
-// // service no longer needs the log through (and including)
-// // that index. Raft should now trim its log as much as possible.
+// the service says it has created a snapshot that has
+// all info up to and including index. this means the
+// service no longer needs the log through (and including)
+// that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
 	rf.Mu.Lock()
@@ -13,7 +13,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	if rf.state != Leader {
 		return
 	}
-	DPrintf(11, "%v: come Snapshot index=%v", rf.SayMeL(), index)
+	DPrintf(111, "%v: come Snapshot index=%v", rf.SayMeL(), index)
 	if rf.log.FirstLogIndex <= index {
 		if index > rf.lastApplied {
 			panic(fmt.Sprintf("%v: index=%v rf.lastApplied=%v\n", rf.SayMeL(), index, rf.lastApplied))
@@ -69,7 +69,6 @@ func (rf *Raft) RequestInstallSnapshot(args *RequestInstallSnapShotArgs, reply *
 		rf.votedFor = -1
 		rf.currentTerm = args.Term
 		reply.Term = rf.currentTerm
-
 	}
 	defer rf.persist()
 

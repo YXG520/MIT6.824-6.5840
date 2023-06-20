@@ -20,6 +20,7 @@ package raft
 import (
 	"MIT6.824-6.5840/labgob"
 	"bytes"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -171,6 +172,7 @@ func (rf *Raft) persist() {
 func (rf *Raft) readPersist() {
 
 	stateData := rf.persister.ReadRaftState()
+
 	if stateData == nil || len(stateData) < 1 { // bootstrap without any state?
 		return
 	}
@@ -188,13 +190,13 @@ func (rf *Raft) readPersist() {
 			d.Decode(&rf.snapshotLastIncludeTerm) != nil {
 			//   error...
 			DPrintf(999, "%v: readPersist decode error\n", rf.SayMeL())
-			panic("")
+			panic("readPersist decode error")
 		}
 	}
 	rf.snapshot = rf.persister.ReadSnapshot()
 	rf.commitIndex = rf.snapshotLastIncludeIndex
 	rf.lastApplied = rf.snapshotLastIncludeIndex
-	DPrintf(111, "%v: 节点被宕机重启，成功加载获取持久化数据", rf.SayMeL())
+	//log.Printf("%v: 节点被宕机重启，成功加载获取持久化数据", rf.SayMeL())
 
 }
 
@@ -267,7 +269,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 	index = rf.log.LastLogIndex + 1
 	// 开始发送AppendEntries rpc
-
 	DPrintf(100, "%v: a command index=%v cmd=%T %v come", rf.SayMeL(), index, command, command)
 	rf.log.appendL(Entry{term, command})
 	rf.persist()
@@ -702,12 +703,12 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 
 func (rf *Raft) SayMeL() string {
 
-	//return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
-	//	rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
-	return "success"
+	return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
+		rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
+	//return "success"
 }
 
-// 通知tester接收这个日志消息，然后供测试使用
+// 通知tester（作用相当于状态机）接收这个日志消息，然后供状态机使用
 func (rf *Raft) sendMsgToTester() {
 	rf.Mu.Lock()
 	defer rf.Mu.Unlock()
@@ -767,7 +768,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// 初始化状态机相关参数
 	rf.commitIndex = 0
 	rf.lastApplied = 0
-
 	// initialize from state persisted before a crash
 	rf.readPersist() // 持久化一定要在commitIndex,lastApplied,snapshotLastIncludeTerm,snapshotLastIncludeIndex 初始化之后执行，否则持久化后恢复的数据会被覆盖为0
 	rf.ApplyHelper = NewApplyHelper(applyCh, rf.lastApplied)
@@ -831,4 +831,14 @@ func (rf *Raft) getLastEntryTerm() int {
 	}
 	return -1
 
+}
+func (rf *Raft) GetLastApplied() int {
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
+	return rf.lastApplied
+}
+func (rf *Raft) GetSnapshot() []byte {
+	rf.Mu.Lock()
+	defer rf.Mu.Unlock()
+	return rf.snapshot
 }

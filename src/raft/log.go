@@ -50,7 +50,9 @@ func (log *Log) String() string {
 func (log *Log) empty() bool {
 	return log.FirstLogIndex > log.LastLogIndex
 }
-
+func (rf *Raft) GetLogEntries() []Entry {
+	return rf.log.Entries
+}
 func (rf *Raft) getEntryTerm(index int) int {
 	if index == 0 {
 		return 0

@@ -1,6 +1,9 @@
 package kvraft
 
-import "MIT6.824-6.5840/labrpc"
+import (
+	"MIT6.824-6.5840/labrpc"
+	"log"
+)
 import "testing"
 import "os"
 
@@ -174,7 +177,7 @@ func (cfg *config) ConnectAll() {
 func (cfg *config) partition(p1 []int, p2 []int) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	// log.Printf("partition servers into: %v %v\n", p1, p2)
+	log.Printf("partition servers into: %v %v\n", p1, p2)
 	for i := 0; i < len(p1); i++ {
 		cfg.disconnectUnlocked(p1[i], p2)
 		cfg.connectUnlocked(p1[i], p1)
@@ -183,6 +186,7 @@ func (cfg *config) partition(p1 []int, p2 []int) {
 		cfg.disconnectUnlocked(p2[i], p1)
 		cfg.connectUnlocked(p2[i], p2)
 	}
+	DPrintf(11111, "成功进行新一轮分区")
 }
 
 // Create a clerk with clerk specific server names.

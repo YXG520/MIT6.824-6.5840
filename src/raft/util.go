@@ -80,10 +80,10 @@ func (applyHelper *ApplyHelper) applier() {
 		msg := applyHelper.q[0]
 		applyHelper.q = applyHelper.q[1:]
 		applyHelper.mu.Unlock()
-		DPrintf(800, "applyhelper start apply msg index=%v ", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
+		DPrintf(8000, "applyhelper start apply msg index=%v", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
 		applyHelper.applyCh <- msg
 		//<-applyHelper.applyCh
-		DPrintf(800, "applyhelper done apply msg index=%v", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex))
+		DPrintf(8000, "applyhelper done apply msg index=%v with log entry： %v", ifCond(msg.CommandValid, msg.CommandIndex, msg.SnapshotIndex), msg.Command)
 	}
 }
 func (applyHelper *ApplyHelper) tryApply(msg *ApplyMsg) bool {
