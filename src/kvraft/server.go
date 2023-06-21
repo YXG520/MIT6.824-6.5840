@@ -38,7 +38,8 @@ type KVServer struct {
 	//snapshot    []byte // 快照保存的是某一个日志索引应用后状态机存储的数据状态
 	lastApplied int // 最近一次应用的日志命令所在的索引
 
-	persister *raft.Persister // 共享raft的持久化地址，方便查找
+	lastIncludeIndex int             // 最近一次快照的截止的日志索引
+	persister        *raft.Persister // 共享raft的持久化地址，方便查找
 }
 
 // servers[] contains the ports of the set of
@@ -68,13 +69,12 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, kv.persister, kv.applyCh)
 
-	//kv.snapshot = nil
-	// You may need initialization code here.
 	kv.seqMap = make(map[int64]int)
 	kv.kvPersist = make(map[string]string)
 	kv.waitChMap = make(map[int]chan Op)
+	//kv.lastIncludeIndex = -1
 	//kv.decodeSnapshot(kv.rf.GetLastApplied(), kv.rf.GetSnapshot())
-	kv.decodeSnapshot(kv.rf.GetLastApplied(), kv.persister.ReadSnapshot())
+	kv.decodeSnapshot(kv.rf.GetLastIncludeIndex(), kv.persister.ReadSnapshot())
 	go kv.applyMsgHandlerLoop()
 	return kv
 }
@@ -146,14 +146,14 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 		}
 		select {
 		case msg := <-kv.applyCh:
+			// 如果是命令消息，则应用命令同时响应客户端
 			if msg.CommandValid {
-				// 如果是命令消息，则应用命令同时响应客户端
 				index := msg.CommandIndex
+				// 传来的信息快照已经存储了则直接返回
+				//if index <= kv.lastIncludeIndex {
+				//	return
+				//}
 				op := msg.Command.(Op)
-
-				kv.mu.Lock()
-				kv.lastApplied = index
-				kv.mu.Unlock()
 
 				//fmt.Printf("[ ~~~~applyMsgHandlerLoop~~~~ ]: %+v\n", msg)
 				if !kv.ifDuplicate(op.ClientId, op.SeqId) {
@@ -171,7 +171,7 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 					kv.seqMap[op.ClientId] = op.SeqId
 					// 如果需要日志的容量达到规定值则需要制作快照并且投递
 					if kv.isNeedSnapshot() {
-						go kv.makeSnapshot()
+						go kv.makeSnapshot(msg.CommandIndex)
 						//go kv.deliverSnapshot()
 					}
 					kv.mu.Unlock()

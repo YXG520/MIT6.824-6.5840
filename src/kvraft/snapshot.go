@@ -6,17 +6,18 @@ import (
 )
 
 func (kv *KVServer) isNeedSnapshot() bool {
-	len := kv.persister.RaftStateSize()
-	DPrintf(11111, "kv.maxraftstate is %d, and the len of raft log is %d ", kv.maxraftstate, len)
 	if kv.maxraftstate == -1 {
 		return false
 	}
+	len := kv.persister.RaftStateSize()
+	DPrintf(10000001, "kv.maxraftstate is %d, and the len of raft log is %d ", kv.maxraftstate, len)
+
 	//return kv.maxraftstate >= len-50 && kv.maxraftstate <= len
 	return len-100 >= kv.maxraftstate
 }
 
 // 制作快照
-func (kv *KVServer) makeSnapshot() {
+func (kv *KVServer) makeSnapshot(index int) {
 	_, isleader := kv.rf.GetState()
 	if !isleader {
 		DPrintf(11111, "非leader节点，无权限做快照")
@@ -35,7 +36,7 @@ func (kv *KVServer) makeSnapshot() {
 	//kv.snapshot = w.Bytes()
 	DPrintf(11111, "快照制作完成，准备发送快照")
 	// 快照完马上递送给leader节点
-	go kv.rf.Snapshot(kv.lastApplied, snapshot)
+	go kv.rf.Snapshot(index, snapshot)
 	DPrintf(11111, "完成快照发送")
 	DPrintf(11111, "print快照数据：")
 	//go kv.deliverSnapshot()
@@ -55,7 +56,7 @@ func (kv *KVServer) decodeSnapshot(index int, snapshot []byte) {
 
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	kv.lastApplied = index
+	kv.lastIncludeIndex = index
 	DPrintf(11111, "应用快照前，数据库中的数据为%v, 请求状态为%v", kv.kvPersist, kv.seqMap)
 
 	if d.Decode(&kv.kvPersist) != nil || d.Decode(&kv.seqMap) != nil {

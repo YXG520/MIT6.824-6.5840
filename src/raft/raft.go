@@ -20,7 +20,6 @@ package raft
 import (
 	"MIT6.824-6.5840/labgob"
 	"bytes"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -703,9 +702,9 @@ func (rf *Raft) AppendEntries2(targetServerId int, heart bool) {
 
 func (rf *Raft) SayMeL() string {
 
-	return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
-		rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
-	//return "success"
+	//return fmt.Sprintf("[Server %v as %v at term %v with votedFor %d, FirstLogIndex %d, LastLogIndex %d, lastIncludedIndex %d, commitIndex %d, and lastApplied %d]： + \n",
+	//	rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.log.FirstLogIndex, rf.log.LastLogIndex, rf.snapshotLastIncludeIndex, rf.commitIndex, rf.lastApplied)
+	return "success"
 }
 
 // 通知tester（作用相当于状态机）接收这个日志消息，然后供状态机使用
@@ -832,10 +831,10 @@ func (rf *Raft) getLastEntryTerm() int {
 	return -1
 
 }
-func (rf *Raft) GetLastApplied() int {
+func (rf *Raft) GetLastIncludeIndex() int {
 	rf.Mu.Lock()
 	defer rf.Mu.Unlock()
-	return rf.lastApplied
+	return rf.snapshotLastIncludeIndex
 }
 func (rf *Raft) GetSnapshot() []byte {
 	rf.Mu.Lock()
