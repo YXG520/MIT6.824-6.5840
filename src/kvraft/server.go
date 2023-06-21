@@ -98,7 +98,6 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	//fmt.Printf("[ ----Server[%v]----] : send a Get,op is :%+v \n", kv.me, op)
 	lastIndex, _, _ := kv.rf.Start(op)
 	op.Index = lastIndex
-	DPrintf(11111, "lastIndex为%d的命令:%v", lastIndex, op)
 
 	ch := kv.getWaitCh(lastIndex)
 	defer func() {
@@ -161,11 +160,11 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 					switch op.OpType {
 					case PutOp:
 						kv.kvPersist[op.Key] = op.Value
-						DPrintf(1111, "put后，结果为%v", kv.kvPersist[op.Key])
+						//DPrintf(1111, "put后，结果为%v", kv.kvPersist[op.Key])
 
 					case AppendOp:
 						kv.kvPersist[op.Key] += op.Value
-						DPrintf(1111, "Append后，结果为%v", kv.kvPersist[op.Key])
+						//DPrintf(1111, "Append后，结果为%v", kv.kvPersist[op.Key])
 
 					}
 					kv.seqMap[op.ClientId] = op.SeqId
@@ -180,7 +179,7 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 				kv.getWaitCh(index) <- op
 			} else if msg.SnapshotValid {
 				// 如果是raft传递上来的快照消息，就应用快照，但是不需要响应客户
-				DPrintf(11111, "节点%d应用快照", kv.me)
+				//DPrintf(11111, "节点%d应用快照", kv.me)
 				kv.decodeSnapshot(msg.SnapshotIndex, msg.Snapshot)
 			}
 

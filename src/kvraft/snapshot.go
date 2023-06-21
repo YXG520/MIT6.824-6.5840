@@ -10,7 +10,7 @@ func (kv *KVServer) isNeedSnapshot() bool {
 		return false
 	}
 	len := kv.persister.RaftStateSize()
-	DPrintf(10000001, "kv.maxraftstate is %d, and the len of raft log is %d ", kv.maxraftstate, len)
+	//DPrintf(10000001, "kv.maxraftstate is %d, and the len of raft log is %d ", kv.maxraftstate, len)
 
 	//return kv.maxraftstate >= len-50 && kv.maxraftstate <= len
 	return len-100 >= kv.maxraftstate
@@ -57,14 +57,11 @@ func (kv *KVServer) decodeSnapshot(index int, snapshot []byte) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	kv.lastIncludeIndex = index
-	DPrintf(11111, "应用快照前，数据库中的数据为%v, 请求状态为%v", kv.kvPersist, kv.seqMap)
 
 	if d.Decode(&kv.kvPersist) != nil || d.Decode(&kv.seqMap) != nil {
 		DPrintf(999, "%v: readPersist snapshot decode error\n", kv.rf.SayMeL())
 		panic("error in parsing snapshot")
 	}
-	DPrintf(11111, "应用快照后，数据库中的数据为%v, 请求状态为%v", kv.kvPersist, kv.seqMap)
-	DPrintf(11111, "%v: 此时从节点的日志条目为: %v", kv.rf.SayMeL(), kv.rf.GetLogEntries())
 }
 
 // 将快照传递给leader节点，再由leader节点传递给各个从节点

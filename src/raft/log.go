@@ -64,7 +64,7 @@ func (rf *Raft) getEntryTerm(index int) int {
 		return rf.log.getOneEntry(index).Term
 	}
 
-	DPrintf(999, "invalid index=%v in getEntryTerm rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n", index, rf.log.FirstLogIndex, rf.log.LastLogIndex)
+	//DPrintf(999, "invalid index=%v in getEntryTerm rf.log.FirstLogIndex=%v rf.log.LastLogIndex=%v\n", index, rf.log.FirstLogIndex, rf.log.LastLogIndex)
 	return -1
 }
 
