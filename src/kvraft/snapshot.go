@@ -13,7 +13,7 @@ func (kv *KVServer) isNeedSnapshot() bool {
 	//DPrintf(10000001, "kv.maxraftstate is %d, and the len of raft log is %d ", kv.maxraftstate, len)
 
 	//return kv.maxraftstate >= len-50 && kv.maxraftstate <= len
-	return len-100 >= kv.maxraftstate
+	return len >= kv.maxraftstate
 }
 
 // 制作快照
@@ -36,7 +36,7 @@ func (kv *KVServer) makeSnapshot(index int) {
 	//kv.snapshot = w.Bytes()
 	DPrintf(11111, "快照制作完成，准备发送快照")
 	// 快照完马上递送给leader节点
-	go kv.rf.Snapshot(index, snapshot)
+	kv.rf.Snapshot(index, snapshot)
 	DPrintf(11111, "完成快照发送")
 	DPrintf(11111, "print快照数据：")
 	//go kv.deliverSnapshot()

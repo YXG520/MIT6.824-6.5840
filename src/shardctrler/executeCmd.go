@@ -1,85 +1,67 @@
-<h1 align="center">MIT6.5840（6.824）-Distributed-System Lab4A</h1>
+package shardctrler
 
-The Lab4A's realization of MIT6.5840(also early called 6.824) Distributed System in Spring 2023
+import "sort"
 
-至于4A的实现，非常推荐大家看一下这篇csdn博客，
-[MIT6.824-lab4A-2022（万字推导思路及代码构建）](https://blog.csdn.net/weixin_45938441/article/details/125386091?spm=1001.2014.3001.5502)
+// 浅拷贝
+func (sc *ShardCtrler) execQueryCmd(op *Op) {
+	// 是-1就返回最近的配置
+	if op.Num == -1 {
+		op.Cfg = sc.configs[len(sc.configs)-1]
+		DPrintf(1111, "[节点%d执行query之后最新配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
+			sc.me, len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)
+		return
+	}
+	op.Cfg = sc.configs[op.Num]
+	DPrintf(1111, "[节点%d执行query获取版本号为%d的配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
+		sc.me, op.Num, len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)
 
-我的代码和这篇博客不相同，但是这个人讲解的非常好
+}
 
-# 1 数据库分片的基础知识
-## 1.1 此lab中数据库的分片所采用的架构？
+func (sc *ShardCtrler) execMoveCmd(op *Op) {
+	sc.MoveShard(op.Shard, op.GID)
+}
+func (sc *ShardCtrler) MoveShard(shardId int, GID int) {
+	DPrintf(1111, "[Move前的配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
+		len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)
+	DPrintf(111, "move args: %d and %d", shardId, GID)
+	// 获取最新的配置
+	oldConfig := sc.configs[len(sc.configs)-1]
+	newConfig := Config{
+		Num:    oldConfig.Num + 1,
+		Shards: oldConfig.Shards, // 注意: 这里我们只是复制了分片的分配，后面会更新目标分片
+		Groups: make(map[int][]string),
+	}
 
-> 作业中讲到的：This lab's general architecture (a configuration service and a set of replica groups) 
-> follows the same general pattern as Flat Datacenter Storage, BigTable, Spanner, FAWN, Ap
-> ache HBase, Rosebud, Spinnaker, and many others. These systems differ in many details 
-> from this lab, though, and are also typically more sophisticated and capable. For example, 
-> the lab doesn't evolve the sets of peers in each Raft group; its data and query models are 
-> very simple; and handoff of shards is slow and doesn't allow concurrent client access.
+	// 复制复制组信息
+	for gid, servers := range oldConfig.Groups {
+		copiedServers := make([]string, len(servers))
+		copy(copiedServers, servers)
+		newConfig.Groups[gid] = copiedServers
+	}
 
-核心：a configuration service and a set of replica groups
+	// 移动目标分片到新的复制组
+	if _, exists := newConfig.Groups[GID]; exists {
+		newConfig.Shards[shardId] = GID
+	} else {
+		// 如果目标 GID 不存在，不执行移动操作。
+		return
+	}
 
-Lab4A需要实现的就是其中的配置服务部分，也可以称为shard controller，其实现和Lab3A大同小异，**唯一比较耗时的
-是负载均衡部分**。
+	// 将新配置添加到配置列表
+	sc.configs = append(sc.configs, newConfig)
 
+	// 可以在这里输出新配置的信息，或者执行其他后续操作
+	DPrintf(1111, "[Move后最新配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
+		len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)
+}
 
-## 1.2 讲一下”一个配置服务和一组复制组“这种架构的各个角色的作用
-
-![img.png](images/img.png)
-
-## 1.3 在“一个配置服务和一组复制组”架构下，读写请求如何打给复制组的？
-![img_1.png](images/img_1.png)
-
-在Lab3的introduction中也规定了我们必须得实现控制器的几个接口，
-其中有一个Query接口，用于客户端查询相关键的配置信息，包括这个键值对存储在
-哪一个复制组中，为什么需要定义这个接口呢，其目的就是给客户端提供具体键值对
-所在复制组的信息以供其将读写请求打到具体的复制组
-
-## 1.4 在“一个配置服务和一组复制组”架构下，客户端的读写请求需要两次访问
-![img_2.png](images/img_2.png)
-
-## 1.5 这种架构的其他应用
-
-![img_3.png](images/img_3.png)
-
-# 2 任务分解
-
-## 2.1 Lab4a的具体任务？
-
-> 答：从上面来看，我们的任务就是实现一个基于raft日志复制的配置服务中心，
-> 跟Lab3非常的类似, 只不过4不需要实现快照功能，我们只需要将Lab3中的
-> Put/Get/Append命令换成Query/Leave/Join/Move等命令即可。
-
-## 2.2 一个gid代表一个复制组，这个复制组里的机器宕机后是不是可以加入别的复制组？
-
-
-## 2.3 为什么这里不用对状态机进行持久化?
-> 如果仅仅对下层的raft日志进行持久化，则无需持久化上层状态机的数据，因为可以通过重放日志恢复数据状态，
-> 只有当需要对日志进行快照操作时才需要也对数据状态快照，并且持久化日志和状态，以便删除快照之前的日志，然后
-> 再利用之后的日志和快照的数据状态进行快速重放。
-
-## 2.4 结构体Config的num字段解析
-
-![img_4.png](images/img_4.png)
-
-![img_5.png](images/img_5.png)
-
-## 2.5 所以一个集群中只有一个是配置是有效的对吗
-![img_6.png](images/img_6.png)
-
-## 2.6 当撤销掉/新增一个复制组后，如何对分片进行负载均衡？
-
-### 2.6.1 当新增一个复制组时:
-
-需要注意两点，
-
-1 应该new 一个配置，做一个深拷贝，而不是直接将当前的最新配置的地址加到配置分片的末尾或浅拷贝
-
-2 合并新旧复制组后，需要新建一个切片，将所有复制组的gid放入切片中，然后再排序，后面计算每个复制组需要
-的分片数，以及重新分片的时候都需要按照gid切片的顺序处理，这是因为不同协程遍历同一个map的键时是乱序的，
-所以很有可能导致分片状态在几个节点中不一致
-
-```go
+// 状态机执行join命令的时候
+func (sc *ShardCtrler) execJoinCmd(op *Op) {
+	//sc.mu.Lock()
+	//defer sc.mu.Unlock()
+	sc.RebalanceShardsForJoin(op.Servers)
+	//sc.configs[newConfigIndex] = newConfig
+}
 
 func (sc *ShardCtrler) RebalanceShardsForJoin(newGroups map[int][]string) {
 	// 获取最新的配置
@@ -148,14 +130,13 @@ func (sc *ShardCtrler) RebalanceShardsForJoin(newGroups map[int][]string) {
 	DPrintf(1111, "[节点%d执行Join之后最新配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
 		sc.me, len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)
 }
-```
 
-### 2.6.2 当撤销一个复制组时的负载均衡怎么做到？
+// 状态机执行leave命令的时候
+func (sc *ShardCtrler) execLeaveCmd(op *Op) {
 
-除了2.6.1中提到的两点，撤销一个复制组时还有一个额外需要处理的corner case，比如当增加一个gid为1复制组，
-此时所有shards的都分配给了1，然后又撤销这个复制组时，此时shards应该都指向0，
+	sc.RebalanceShardsForLeave(op.GIDs)
+}
 
-```go
 func (sc *ShardCtrler) RebalanceShardsForLeave(removedGIDs []int) {
 	// 获取最新的配置
 	oldConfig := sc.configs[len(sc.configs)-1]
@@ -238,4 +219,3 @@ func (sc *ShardCtrler) RebalanceShardsForLeave(removedGIDs []int) {
 	DPrintf(1111, "[节点%d Leave后最新配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
 		sc.me, len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)
 }
-```

@@ -1,7 +1,6 @@
 package kvraft
 
 type Err string
-type OpType string
 
 const (
 	OK             Err = "OK"

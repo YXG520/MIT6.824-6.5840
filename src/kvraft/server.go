@@ -17,7 +17,7 @@ type Op struct {
 	Key      string
 	Value    string
 	ClientId int64
-	Index    int // raft服务层传来的Index
+	Index    int // raft服务层传来的Index，用于通知对应的操作
 	OpType   string
 }
 
@@ -34,9 +34,6 @@ type KVServer struct {
 	seqMap    map[int64]int     //为了确保seq只执行一次	clientId / seqId
 	waitChMap map[int]chan Op   //传递由下层Raft服务的appCh传过来的command	index / chan(Op)
 	kvPersist map[string]string // 存储持久化的KV键值对	K / V
-
-	//snapshot    []byte // 快照保存的是某一个日志索引应用后状态机存储的数据状态
-	lastApplied int // 最近一次应用的日志命令所在的索引
 
 	lastIncludeIndex int             // 最近一次快照的截止的日志索引
 	persister        *raft.Persister // 共享raft的持久化地址，方便查找
@@ -165,7 +162,6 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 					case AppendOp:
 						kv.kvPersist[op.Key] += op.Value
 						//DPrintf(1111, "Append后，结果为%v", kv.kvPersist[op.Key])
-
 					}
 					kv.seqMap[op.ClientId] = op.SeqId
 					// 如果需要日志的容量达到规定值则需要制作快照并且投递
@@ -176,7 +172,9 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 					kv.mu.Unlock()
 				}
 				// 将返回的ch返回waitCh
-				kv.getWaitCh(index) <- op
+				if _, isLead := kv.rf.GetState(); isLead {
+					kv.getWaitCh(index) <- op
+				}
 			} else if msg.SnapshotValid {
 				// 如果是raft传递上来的快照消息，就应用快照，但是不需要响应客户
 				//DPrintf(11111, "节点%d应用快照", kv.me)
@@ -186,51 +184,6 @@ func (kv *KVServer) applyMsgHandlerLoop() {
 		}
 	}
 }
-
-//func (kv *KVServer) applyMsgHandlerLoop2() {
-//	for {
-//		if kv.killed() {
-//			return
-//		}
-//		select {
-//		case msg := <-kv.applyCh:
-//			if msg.CommandValid {
-//
-//			}
-//			index := msg.CommandIndex
-//			op := msg.Command.(Op)
-//
-//			kv.mu.Lock()
-//			kv.lastApplied = index
-//			kv.mu.Unlock()
-//
-//			//fmt.Printf("[ ~~~~applyMsgHandlerLoop~~~~ ]: %+v\n", msg)
-//			if !kv.ifDuplicate(op.ClientId, op.SeqId) {
-//				kv.mu.Lock()
-//				switch op.OpType {
-//				case PutOp:
-//					kv.kvPersist[op.Key] = op.Value
-//					DPrintf(1111, "put后，结果为%v", kv.kvPersist[op.Key])
-//
-//				case AppendOp:
-//					kv.kvPersist[op.Key] += op.Value
-//					DPrintf(1111, "Append后，结果为%v", kv.kvPersist[op.Key])
-//
-//				}
-//				kv.seqMap[op.ClientId] = op.SeqId
-//				// 如果需要日志的容量达到规定值则需要制作快照并且投递
-//				if kv.isNeedSnapshot() {
-//					go kv.makeSnapshot()
-//					//go kv.deliverSnapshot()
-//				}
-//				kv.mu.Unlock()
-//			}
-//
-//			// 将返回的ch返回waitCh
-//			kv.getWaitCh(index) <- op
-//		}
-//	}
-//}
 
 // 判断是否是重复操作的也比较简单,因为我是对seq进行递增，所以直接比大小即可
 func (kv *KVServer) ifDuplicate(clientId int64, seqId int) bool {

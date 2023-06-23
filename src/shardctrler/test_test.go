@@ -91,15 +91,19 @@ func TestBasic(t *testing.T) {
 	cfa[0] = ck.Query(-1)
 
 	check(t, []int{}, ck)
-
+	fmt.Printf("initial check finished...")
 	var gid1 int = 1
 	ck.Join(map[int][]string{gid1: []string{"x", "y", "z"}})
 	check(t, []int{gid1}, ck)
+	fmt.Printf("2nd check finished...")
+
 	cfa[1] = ck.Query(-1)
 
 	var gid2 int = 2
 	ck.Join(map[int][]string{gid2: []string{"a", "b", "c"}})
 	check(t, []int{gid1, gid2}, ck)
+	fmt.Printf("3rd check finished...")
+
 	cfa[2] = ck.Query(-1)
 
 	cfx := ck.Query(-1)
@@ -111,9 +115,12 @@ func TestBasic(t *testing.T) {
 	if len(sa2) != 3 || sa2[0] != "a" || sa2[1] != "b" || sa2[2] != "c" {
 		t.Fatalf("wrong servers for gid %v: %v\n", gid2, sa2)
 	}
+	fmt.Printf("ready to leave some shards...")
 
 	ck.Leave([]int{gid1})
 	check(t, []int{gid2}, ck)
+	fmt.Printf("after leave some shards elsewhere, 4th check finished...")
+
 	cfa[4] = ck.Query(-1)
 
 	ck.Leave([]int{gid2})
@@ -388,9 +395,10 @@ func TestMulti(t *testing.T) {
 	c := ck.Query(-1) // Config leader claims
 
 	cfg.ShutdownServer(leader)
-
+	DPrintf(111, "将leader%d节点宕机，查看配置是否同步", leader)
 	attempts := 0
 	for isLeader, leader = cfg.Leader(); isLeader; time.Sleep(1 * time.Second) {
+		DPrintf(111, "是否产生新leader%v, 新leader为%d", isLeader, leader)
 		if attempts++; attempts >= 3 {
 			t.Fatalf("Leader not found")
 		}
