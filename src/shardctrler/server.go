@@ -360,7 +360,7 @@ func (sc *ShardCtrler) Killed() bool {
 	return z == 1
 }
 
-// needed by shardkv tester
+// needed by shardkv_old tester
 func (sc *ShardCtrler) Raft() *raft.Raft {
 	return sc.rf
 }

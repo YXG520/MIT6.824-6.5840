@@ -1,4 +1,4 @@
-package shardkv
+package shardkv_old
 
 import "MIT6.824-6.5840/porcupine"
 import "MIT6.824-6.5840/models"
@@ -24,17 +24,13 @@ func check(t *testing.T, ck *Clerk, key string, value string) {
 func TestStaticShards(t *testing.T) {
 	fmt.Printf("Test: static shards ...\n")
 
-	// 制作三个复制组和一个配置中心
 	cfg := make_config(t, 3, false, -1)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient()
-	DPrintf(111, "制作tester客户端完成...")
-	cfg.join(0)
-	DPrintf(111, "join一个复制组...")
 
+	cfg.join(0)
 	cfg.join(1)
-	DPrintf(111, "join第二个复制组...")
 
 	n := 10
 	ka := make([]string, n)

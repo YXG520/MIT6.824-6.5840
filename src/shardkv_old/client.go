@@ -1,4 +1,4 @@
-package shardkv
+package shardkv_old
 
 //
 // client code to talk to a sharded key/value service.
@@ -8,10 +8,7 @@ package shardkv
 // talks to the group that holds the key's shard.
 //
 
-import (
-	"MIT6.824-6.5840/labrpc"
-	"sync"
-)
+import "MIT6.824-6.5840/labrpc"
 import "crypto/rand"
 import "math/big"
 import "MIT6.824-6.5840/shardctrler"
@@ -37,14 +34,10 @@ func nrand() int64 {
 }
 
 type Clerk struct {
-	sm       *shardctrler.Clerk // 配置中心的客户端，供我们调用以获取最新的服务
+	sm       *shardctrler.Clerk
 	config   shardctrler.Config
 	make_end func(string) *labrpc.ClientEnd
 	// You will have to modify this struct.
-	seqId    int
-	clientId int64 // 标识客户端的唯一ID，可以用于跟踪和关联请求。
-
-	mu sync.Mutex
 }
 
 // the tester calls MakeClerk.
@@ -59,11 +52,6 @@ func MakeClerk(ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.Client
 	ck.sm = shardctrler.MakeClerk(ctrlers)
 	ck.make_end = make_end
 	// You'll have to add code here.
-	ck.clientId = nrand()
-	ck.seqId = 0
-	// 初始化时就向配置中心获取配置并且更新到本地缓存中
-	ck.config = ck.sm.Query(-1)
-
 	return ck
 }
 
@@ -74,11 +62,7 @@ func MakeClerk(ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.Client
 func (ck *Clerk) Get(key string) string {
 	args := GetArgs{}
 	args.Key = key
-	ck.mu.Lock()
-	defer ck.mu.Unlock()
-	ck.seqId++
-	args.ClientId = ck.clientId
-	args.SeqId = ck.seqId
+
 	for {
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
@@ -88,20 +72,18 @@ func (ck *Clerk) Get(key string) string {
 				srv := ck.make_end(servers[si])
 				var reply GetReply
 				ok := srv.Call("ShardKV.Get", &args, &reply)
-				if ok && (reply.Err == OK || reply.Err == ErrNoKey || reply.Err == ErrDuplicate) {
+				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
 					return reply.Value
 				}
 				if ok && (reply.Err == ErrWrongGroup) {
 					break
 				}
-
 				// ... not ok, or ErrWrongLeader
-				//if ok && (reply.Err == ErrWrongLeader)
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 		// ask controler for the latest configuration.
-		ck.config = ck.sm.Query(-1) // 典型的懒加载或者按需加载
+		ck.config = ck.sm.Query(-1)
 	}
 
 	return ""
@@ -114,22 +96,16 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	args.Key = key
 	args.Value = value
 	args.Op = op
-	ck.mu.Lock()
-	defer ck.mu.Unlock()
-	ck.seqId++
-	args.ClientId = ck.clientId
-	args.SeqId = ck.seqId
+
 	for {
 		shard := key2shard(key)
-		//args.shardId = shard
-
 		gid := ck.config.Shards[shard]
 		if servers, ok := ck.config.Groups[gid]; ok {
 			for si := 0; si < len(servers); si++ {
 				srv := ck.make_end(servers[si])
 				var reply PutAppendReply
 				ok := srv.Call("ShardKV.PutAppend", &args, &reply)
-				if ok && (reply.Err == OK || reply.Err == ErrNoKey || reply.Err == ErrDuplicate) {
+				if ok && reply.Err == OK {
 					return
 				}
 				if ok && reply.Err == ErrWrongGroup {
