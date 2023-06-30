@@ -4,8 +4,9 @@ import "sort"
 
 // 浅拷贝
 func (sc *ShardCtrler) execQueryCmd(op *Op) {
+
 	// 是-1就返回最近的配置
-	if op.Num == -1 {
+	if op.Num == -1 || op.Num >= len(sc.configs) {
 		op.Cfg = sc.configs[len(sc.configs)-1]
 		DPrintf(1111, "[节点%d执行query之后最新配置信息]: len(sc.configs)：%v, sc.configs[len(sc.configs)-1].Num： %v, sc.configs[len(sc.configs)-1].Shards： %v, sc.configs[len(sc.configs)-1].Groups： %v",
 			sc.me, len(sc.configs), sc.configs[len(sc.configs)-1].Num, sc.configs[len(sc.configs)-1].Shards, sc.configs[len(sc.configs)-1].Groups)

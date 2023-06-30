@@ -5,7 +5,6 @@ func (kv *ShardKV) updateConfig(op Op) {
 	curConfig := kv.Config
 	upConfig := op.ConfigOp.Config
 	if curConfig.Num >= upConfig.Num {
-		op.Err = ErrStaleConfig
 		DPrintf(111, "拒绝旧配置")
 		return
 	}
@@ -16,14 +15,11 @@ func (kv *ShardKV) updateConfig(op Op) {
 			kv.shardPersist[shard].ConfigNum = upConfig.Num
 		}
 	}
-	//DPrintf(111, "%v：更新配置前", kv.sayBasicInfo())
+	DPrintf(111, "%v：更新配置前", kv.sayBasicInfo())
 	kv.latestConfig = curConfig
 	kv.Config = upConfig
-	//kv.TranferringShards = false
-	if kv.gid != 102 {
-		DPrintf(111, "%v:更新配置成功", kv.sayBasicInfo())
-	}
-	op.Err = OK
+	kv.TranferringShards = false
+	DPrintf(111, "%v:更新配置成功", kv.sayBasicInfo())
 }
 
 // AddShards move shards from caller to this server
@@ -40,7 +36,6 @@ func (kv *ShardKV) AddShard(args *MoveShardsArgs, reply *MoveShardsReply) {
 	}
 	reply.Err = kv.startCommand(command, AddShardsTimeout)
 	DPrintf(111, "%v:对请求试图发送切片(ClientId:%d, ShardId:%d)的请求的响应状态：%v, ", kv.sayBasicInfo(), args.ClientId, args.ShardId, reply.Err)
-
 	return
 }
 
@@ -54,24 +49,20 @@ func (kv *ShardKV) addShardHandler(op Op) {
 
 	kv.shardPersist[op.ShardId] = kv.cloneShard(op.ConfigOp.SentShard.ConfigNum, op.ConfigOp.SentShard.KvMap)
 	DPrintf(111, "%v: 成功接收到分片%d", kv.sayBasicInfo(), op.ShardId)
-	for clientId, seqId := range op.SeqMap {
-		if r, ok := kv.seqMap[clientId]; !ok || r < seqId {
-			kv.seqMap[clientId] = seqId
-		}
-	}
 	op.Err = OK
-
+	//for clientId, seqId := range op.SeqMap {
+	//	if r, ok := kv.SeqMap[clientId]; !ok || r < seqId {
+	//		kv.SeqMap[clientId] = seqId
+	//	}
+	//}
 }
 
 func (kv *ShardKV) removeShardHandler(op Op) {
 	if op.SeqId < kv.Config.Num {
 		DPrintf(111, "配置还未拉取")
-		op.Err = ErrStaleConfig
-
 		return
 	}
 	kv.shardPersist[op.ShardId].KvMap = nil
 	kv.shardPersist[op.ShardId].ConfigNum = op.SeqId
 	DPrintf(111, "%v: 成功移除分片%d", kv.sayBasicInfo(), op.ShardId)
-	op.Err = OK
 }

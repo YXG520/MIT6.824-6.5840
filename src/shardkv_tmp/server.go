@@ -64,8 +64,8 @@ type Op struct {
 	OpType   string
 	ShardId  int
 	ConfigOp ConfigOp
-	SeqMap   map[int64]int
-	Err      Err // 操作op发生的错误
+
+	Err Err // 操作op发生的错误
 }
 
 func (kv *ShardKV) applyMsgHandlerLoop() {
@@ -83,46 +83,30 @@ func (kv *ShardKV) applyMsgHandlerLoop() {
 
 				op := msg.Command.(Op)
 				if op.OpType == PutOp || op.OpType == GetOp || op.OpType == AppendOp {
-					shardId := key2shard(op.Key)
-					kv.mu.Lock()
-
-					if kv.Config.Shards[shardId] != kv.gid {
-						DPrintf(111, "客户端请求的key所在的分片不归自己管")
-						op.Err = ErrWrongGroup
-					} else if kv.shardPersist[shardId].KvMap == nil {
-						// 如果应该存在的切片没有数据那么这个切片就还没到达
-						DPrintf(111, "客户端请求的key所在的分片归自己管但是未到达")
-
-						op.Err = ShardNotArrived
-					} else {
-						if !kv.ifDuplicate(op.ClientId, op.SeqId) {
-							switch op.OpType {
-							case GetOp:
-								op.Value = kv.shardPersist[shardId].KvMap[op.Key]
-								op.Err = OK
-							case PutOp:
-								if kv.shardPersist[shardId].KvMap == nil {
-									kv.shardPersist[shardId].KvMap = make(map[string]string)
-									kv.shardPersist[shardId].ConfigNum = kv.latestConfig.Num
-								}
-								kv.shardPersist[shardId].KvMap[op.Key] = op.Value
-								DPrintf(1111, "%v: put后，结果为%v", kv.sayBasicInfo(), kv.shardPersist[shardId].KvMap[op.Key])
-								op.Err = OK
-
-							case AppendOp:
-								DPrintf(1111, "%v: append前值为%v, append后,值为%v", kv.sayBasicInfo(), kv.shardPersist[shardId].KvMap[op.Key], kv.shardPersist[shardId].KvMap[op.Key]+op.Value)
-								kv.shardPersist[shardId].KvMap[op.Key] += op.Value
-								op.Err = OK
-
-							default:
-								log.Fatalf("invalid command type: %v.", op.OpType)
+					if !kv.ifDuplicate(op.ClientId, op.SeqId) {
+						kv.mu.Lock()
+						shardId := key2shard(op.Key)
+						switch op.OpType {
+						case GetOp:
+							op.Value = kv.shardPersist[shardId].KvMap[op.Key]
+						case PutOp:
+							if kv.shardPersist[shardId].KvMap == nil {
+								kv.shardPersist[shardId].KvMap = make(map[string]string)
+								kv.shardPersist[shardId].ConfigNum = kv.latestConfig.Num
 							}
-
+							kv.shardPersist[shardId].KvMap[op.Key] = op.Value
+							DPrintf(1111, "%v: put后，结果为%v", kv.sayBasicInfo(), kv.shardPersist[shardId].KvMap[op.Key])
+						case AppendOp:
+							DPrintf(1111, "%v: append前值为%v, append后,值为%v", kv.sayBasicInfo(), kv.shardPersist[shardId].KvMap[op.Key], kv.shardPersist[shardId].KvMap[op.Key]+op.Value)
+							kv.shardPersist[shardId].KvMap[op.Key] += op.Value
+						default:
+							log.Fatalf("invalid command type: %v.", op.OpType)
 						}
+
+						kv.mu.Unlock()
 					}
-					kv.mu.Unlock()
 				} else {
-					//kv.mu.Lock()
+					kv.mu.Lock()
 					switch op.OpType {
 					case AddShardHandOp:
 						DPrintf(111, "%v: 准备接收分片%d", kv.sayBasicInfo(), op.ShardId)
@@ -142,7 +126,7 @@ func (kv *ShardKV) applyMsgHandlerLoop() {
 					default:
 						log.Fatalf("invalid command type: %v.", op.OpType)
 					}
-					//kv.mu.Unlock()
+					kv.mu.Unlock()
 
 				}
 
@@ -161,13 +145,7 @@ func (kv *ShardKV) applyMsgHandlerLoop() {
 				if _, isLead := kv.rf.GetState(); isLead {
 					//DPrintf(111, "%v: 是lead，返回关于%v操作", kv.sayBasicInfo(), op.OpType)
 					DPrintf(111, "%v:是leader，返回channel之前，打印数据状态:op.Err:%v, op.OpType：%v", kv.sayBasicInfo(), op.Err, op.OpType)
-					kv.mu.Lock()
-					ch := kv.getWaitCh(index)
-					kv.mu.Unlock()
-
-					DPrintf(111, "%v:返回之前打印channel，打印数据状态:op.Err:%v, op.OpType：%v", kv.sayBasicInfo(), op.Err, op.OpType)
-					ch <- op
-					DPrintf(111, "%v:是leader，返回channel之后，打印数据状态:op.Err:%v, op.OpType：%v", kv.sayBasicInfo(), op.Err, op.OpType)
+					kv.getWaitCh(index) <- op
 				} else {
 					//DPrintf(111, "%v: 不是lead，拒绝通知关于%v的操作，但是操作执行成功", kv.sayBasicInfo(), op.OpType)
 				}
@@ -187,13 +165,10 @@ func (kv *ShardKV) allSent() bool {
 		// kv.Config.Shards[shard] != kv.gid：在新配置中这些shards不属于自己才能说明是需要迁移的分片
 		// kv.shardPersist[shard].ConfigNum < kv.Config.Num：如果已经移出成功，则kv.shardPersist[shard].ConfigNum==kv.Config.Num,
 		if gid == kv.gid && kv.Config.Shards[shard] != kv.gid && kv.shardPersist[shard].ConfigNum < kv.Config.Num {
-			DPrintf(111, "%v:没有全部迁出成功", kv.sayBasicInfo())
 			return false
 		}
 	}
-	if kv.gid != 102 {
-		DPrintf(111, "%v:所有待迁出分片，迁出成功", kv.sayBasicInfo())
-	}
+	DPrintf(111, "%v:所有待迁出分片，迁出成功", kv.sayBasicInfo())
 	return true
 }
 
@@ -207,12 +182,7 @@ func (kv *ShardKV) allReceived() bool {
 			return false
 		}
 	}
-	if kv.gid != 102 {
-		DPrintf(111, "%v:所有待迁入分片，迁入成功", kv.sayBasicInfo())
-	} else {
-		DPrintf(111, "%v:待迁入分片没有全部迁移成功", kv.sayBasicInfo())
-
-	}
+	DPrintf(111, "%v:所有待迁入分片，迁入成功", kv.sayBasicInfo())
 	return true
 }
 func (kv *ShardKV) sendShard(servers []*labrpc.ClientEnd, args *MoveShardsArgs, shardId int) {
@@ -221,7 +191,7 @@ func (kv *ShardKV) sendShard(servers []*labrpc.ClientEnd, args *MoveShardsArgs, 
 	index := 0
 	start := time.Now()
 	for {
-		DPrintf(111, "%v: 准备向复制组%d发送分片%d", kv.sayBasicInfo(), kv.Config.Shards[shardId], shardId)
+		DPrintf(111, "%v: 准备向复制组%d(组内实例：%v)发送分片%d", kv.sayBasicInfo(), kv.Config.Shards[shardId], servers[index], shardId)
 
 		var reply MoveShardsReply
 		// 对自己的共识组内进行add
@@ -267,13 +237,9 @@ func (kv *ShardKV) detectConfig() {
 			time.Sleep(UpConfigLoopInterval)
 			continue
 		}
-		//kv.mu.Lock()
+		kv.mu.Lock()
 		// 判断是否把不属于自己的部分给分给别人了
 		if !kv.allSent() {
-			SeqMap := make(map[int64]int)
-			for k, v := range kv.seqMap {
-				SeqMap[k] = v
-			}
 			DPrintf(111, "分片没有全部发送成功")
 
 			kv.TranferringShards = true
@@ -289,7 +255,6 @@ func (kv *ShardKV) detectConfig() {
 						SentShard: sendData,
 						ClientId:  int64(gid),
 						SeqId:     kv.Config.Num,
-						SeqMap:    SeqMap,
 					}
 
 					// shardId -> gid -> server names
@@ -299,24 +264,24 @@ func (kv *ShardKV) detectConfig() {
 						servers[i] = kv.make_end(name)
 					}
 					// 开启协程对每个客户端发送切片(这里发送的应是别的组别，自身的共识组需要raft进行状态修改）
-					go kv.sendShard(servers, &args, shardId)
+					kv.sendShard(servers, &args, shardId)
 				}
 			}
-			//kv.mu.Unlock()
+			kv.mu.Unlock()
 			time.Sleep(UpConfigLoopInterval)
 			continue
 		}
 		if !kv.allReceived() {
-			//kv.mu.Unlock()
+			kv.mu.Unlock()
 			time.Sleep(UpConfigLoopInterval)
 			DPrintf(111, "%v:分片没有全部接收成功", kv.sayBasicInfo())
 			continue
 		}
-		//DPrintf(111, "%v:分片全部迁移完成，准备拉取新配置", kv.sayBasicInfo())
+		DPrintf(111, "%v:分片全部迁移完成，准备拉取新配置", kv.sayBasicInfo())
 		// current configuration is configured, poll for the next configuration
 		curConfig = kv.Config
 		sck := kv.mck
-		//kv.mu.Unlock()
+		kv.mu.Unlock()
 		time.Sleep(UpConfigLoopInterval)
 
 		newConfig := sck.Query(curConfig.Num + 1)
@@ -327,7 +292,7 @@ func (kv *ShardKV) detectConfig() {
 			DPrintf(111, "%v:查询到的配置不是连续的%v", kv.sayBasicInfo(), newConfig)
 			continue
 		} else {
-			//DPrintf(111, "%v:查询到的配置为%v", kv.sayBasicInfo(), newConfig)
+			DPrintf(111, "%v:查询到的配置为%v", kv.sayBasicInfo(), newConfig)
 		}
 
 		command := Op{
@@ -343,8 +308,8 @@ func (kv *ShardKV) detectConfig() {
 
 // 判断是否是重复操作的也比较简单,因为我是对seq进行递增，所以直接比大小即可
 func (kv *ShardKV) ifDuplicate(clientId int64, seqId int) bool {
-	//kv.mu.Lock()
-	//defer kv.mu.Unlock()
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 
 	lastSeqId, exist := kv.seqMap[clientId]
 	if !exist {
@@ -361,7 +326,6 @@ func (kv *ShardKV) getWaitCh(index int) chan Op {
 		kv.waitChMap[index] = make(chan Op, 1)
 		ch = kv.waitChMap[index]
 	}
-
 	return ch
 }
 
@@ -371,205 +335,145 @@ func (kv *ShardKV) unregisterTask(index int) {
 	//kv.mu.Unlock()
 }
 
-//
-//func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
-//	// Your code here.
-//	if kv.Killed() {
-//		reply.Err = ErrWrongLeader
-//		return
-//	}
-//
-//	_, ifLeader := kv.rf.GetState()
-//	if !ifLeader {
-//		reply.Err = ErrWrongLeader
-//		return
-//	}
-//	shardId := key2shard(args.Key)
-//
-//	kv.mu.Lock()
-//	// 确保自己掌管了这个分片并且这个分片没有处在正在迁移的状态中
-//	if kv.Config.Shards[shardId] != kv.gid {
-//		reply.Err = ErrWrongGroup
-//	} else if kv.shardPersist[shardId].KvMap == nil {
-//		reply.Err = ShardNotArrived
-//	}
-//	kv.mu.Unlock()
-//	if reply.Err == ErrWrongGroup || reply.Err == ShardNotArrived {
-//		return
-//	}
-//
-//	// 封装Op传到下层start
-//	op := Op{OpType: GetOp, Key: args.Key, SeqId: args.SeqId, ClientId: args.ClientId}
-//	//fmt.Printf("[ ----Server[%v]----] : send a Get,op is :%+v \n", kv.me, op)
-//	lastIndex, _, _ := kv.rf.Start(op)
-//	op.Index = lastIndex
-//
-//	//kv.mu.Lock()
-//	ch := kv.getWaitCh(lastIndex)
-//	//kv.mu.Unlock()
-//	defer func() {
-//		kv.mu.Lock()
-//		delete(kv.waitChMap, op.Index)
-//		kv.mu.Unlock()
-//	}()
-//
-//	//defer kv.unregisterTask(op.Index)
-//
-//	// 设置超时ticker
-//	timer := time.NewTicker(500 * time.Millisecond)
-//	defer timer.Stop()
-//
-//	select {
-//	case replyOp := <-ch:
-//		//fmt.Printf("[ ----Server[%v]----] : receive a GetAsk :%+v,replyOp:+%v\n", kv.me, args, replyOp)
-//		if op.ClientId != replyOp.ClientId || op.SeqId != replyOp.SeqId {
-//			reply.Err = ErrWrongLeader
-//		} else {
-//			reply.Err = replyOp.Err
-//			kv.mu.Lock()
-//			reply.Value = replyOp.Value
-//			kv.mu.Unlock()
-//			return
-//		}
-//	case <-timer.C:
-//		reply.Err = ErrWrongLeader
-//	}
-//
-//}
-//
-//func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-//	// Your code here.
-//
-//	if kv.Killed() {
-//		reply.Err = ErrWrongLeader
-//		return
-//	}
-//
-//	_, ifLeader := kv.rf.GetState()
-//	if !ifLeader {
-//		reply.Err = ErrWrongLeader
-//		return
-//	}
-//	shardId := key2shard(args.Key)
-//
-//	kv.mu.Lock()
-//	DPrintf(111, "%v:收到了一个Put请求:%v, 其shardId为%d", kv.sayBasicInfo(), args.Op, key2shard(args.Key))
-//	// 确保自己掌管了这个分片并且这个分片没有处在正在迁移的状态中
-//	if kv.Config.Shards[shardId] != kv.gid {
-//		DPrintf(111, "%v:分片不属于自己", kv.sayBasicInfo())
-//		reply.Err = ErrWrongGroup
-//	} else if kv.shardPersist[shardId].KvMap == nil {
-//		DPrintf(111, "%v:分片未到达", kv.sayBasicInfo())
-//		reply.Err = ShardNotArrived
-//	}
-//	kv.mu.Unlock()
-//	if reply.Err == ErrWrongGroup || reply.Err == ShardNotArrived {
-//		return
-//	}
-//	// 封装Op传到下层start
-//	op := Op{OpType: args.Op, Key: args.Key, Value: args.Value, SeqId: args.SeqId, ClientId: args.ClientId}
-//	//fmt.Printf("[ ----Server[%v]----] : is sending a %v,op is :%+v \n", kv.me, args.Op, op)
-//	lastIndex, _, _ := kv.rf.Start(op)
-//	op.Index = lastIndex
-//
-//	DPrintf(11111, "lastIndex为%d的命令:%v", lastIndex, op)
-//
-//	//kv.mu.Lock()
-//	ch := kv.getWaitCh(lastIndex)
-//	//kv.mu.Unlock()
-//
-//	defer func() {
-//		kv.mu.Lock()
-//		delete(kv.waitChMap, op.Index)
-//		kv.mu.Unlock()
-//	}()
-//
-//	//defer kv.unregisterTask(op.Index)
-//
-//	// 设置超时ticker
-//	timer := time.NewTicker(500 * time.Millisecond)
-//	defer timer.Stop()
-//
-//	select {
-//	case replyOp := <-ch:
-//		//fmt.Printf("[ ----Server[%v]----] : receive a %vAsk :%+v,Op:%+v\n", kv.me, args.Op, args, replyOp)
-//		// 通过clientId、seqId确定唯一操作序列
-//		if op.ClientId != replyOp.ClientId || op.SeqId != replyOp.SeqId {
-//			reply.Err = ErrWrongLeader
-//			DPrintf(11111, "%v:错误：ErrWrongLeader", kv.sayBasicInfo())
-//
-//		} else {
-//			reply.Err = replyOp.Err
-//			DPrintf(111, "%v: 对putAppend请求的响应是：%v", kv.sayBasicInfo(), reply.Err)
-//			//reply.Err = OK
-//		}
-//
-//	case <-timer.C:
-//		reply.Err = ErrWrongLeader
-//		DPrintf(11111, "已超时")
-//	}
-//}
-
-//------------------------------------------------------RPC部分----------------------------------------------------------
-
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
-	shardId := key2shard(args.Key)
-	kv.mu.Lock()
-	if kv.Config.Shards[shardId] != kv.gid {
-		reply.Err = ErrWrongGroup
-	} else if kv.shardPersist[shardId].KvMap == nil {
-		reply.Err = ShardNotArrived
-	}
-	kv.mu.Unlock()
-	if reply.Err == ErrWrongGroup || reply.Err == ShardNotArrived {
+	// Your code here.
+	if kv.Killed() {
+		reply.Err = ErrWrongLeader
 		return
 	}
-	command := Op{
-		OpType:   GetOp,
-		ClientId: args.ClientId,
-		SeqId:    args.SeqId,
-		Key:      args.Key,
-	}
-	err := kv.startCommand(command, GetTimeout)
-	if err != OK {
-		reply.Err = err
-		return
-	}
-	kv.mu.Lock()
 
+	_, ifLeader := kv.rf.GetState()
+	if !ifLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	kv.mu.Lock()
+	// 如果正在迁移分片就拒绝用户的请求
+	if kv.TranferringShards {
+		DPrintf(111, "检测到该复制组正在迁移数据，在此期间，会拒绝所有请求")
+		reply.Err = ErrRefusingSinceConfiguring
+		kv.mu.Unlock()
+		return
+	}
+
+	// 确保自己掌管了这个分片并且这个分片没有处在正在迁移的状态中
+	shardId := key2shard(args.Key)
 	if kv.Config.Shards[shardId] != kv.gid {
 		reply.Err = ErrWrongGroup
-	} else if kv.shardPersist[shardId].KvMap == nil {
-		reply.Err = ShardNotArrived
-	} else {
-		reply.Err = OK
-		reply.Value = kv.shardPersist[shardId].KvMap[args.Key]
+		kv.mu.Unlock()
+
+		return
 	}
 	kv.mu.Unlock()
-	return
+
+	// 判断这个分片是否正在迁移中
+
+	// 封装Op传到下层start
+	op := Op{OpType: GetOp, Key: args.Key, SeqId: args.SeqId, ClientId: args.ClientId}
+	//fmt.Printf("[ ----Server[%v]----] : send a Get,op is :%+v \n", kv.me, op)
+	lastIndex, _, _ := kv.rf.Start(op)
+	op.Index = lastIndex
+
+	ch := kv.getWaitCh(lastIndex)
+	//defer func() {
+	//	kv.mu.Lock()
+	//	delete(kv.waitChMap, op.Index)
+	//	kv.mu.Unlock()
+	//}()
+
+	defer kv.unregisterTask(op.Index)
+
+	// 设置超时ticker
+	timer := time.NewTicker(100 * time.Millisecond)
+	defer timer.Stop()
+
+	select {
+	case replyOp := <-ch:
+		//fmt.Printf("[ ----Server[%v]----] : receive a GetAsk :%+v,replyOp:+%v\n", kv.me, args, replyOp)
+		if op.ClientId != replyOp.ClientId || op.SeqId != replyOp.SeqId {
+			reply.Err = ErrWrongLeader
+		} else {
+			reply.Err = OK
+			kv.mu.Lock()
+			reply.Value = replyOp.Value
+			kv.mu.Unlock()
+			return
+		}
+	case <-timer.C:
+		reply.Err = ErrWrongLeader
+	}
+
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	shardId := key2shard(args.Key)
-	kv.mu.Lock()
-	if kv.Config.Shards[shardId] != kv.gid {
-		reply.Err = ErrWrongGroup
-	} else if kv.shardPersist[shardId].KvMap == nil {
-		reply.Err = ShardNotArrived
-	}
-	kv.mu.Unlock()
-	if reply.Err == ErrWrongGroup || reply.Err == ShardNotArrived {
+	// Your code here.
+
+	if kv.Killed() {
+		reply.Err = ErrWrongLeader
 		return
 	}
-	command := Op{
-		OpType:   args.Op,
-		ClientId: args.ClientId,
-		SeqId:    args.SeqId,
-		Key:      args.Key,
-		Value:    args.Value,
+
+	_, ifLeader := kv.rf.GetState()
+	if !ifLeader {
+		reply.Err = ErrWrongLeader
+		return
 	}
-	reply.Err = kv.startCommand(command, AppOrPutTimeout)
-	return
+	DPrintf(111, "%v:收到了一个Put请求:%v, 其shardId为%d", kv.sayBasicInfo(), args.Op, key2shard(args.Key))
+	kv.mu.Lock()
+	// 如果正在迁移分片就拒绝所有用户的请求
+	if kv.TranferringShards {
+		DPrintf(111, "%v:检测到该复制组正在迁移数据，在此期间，会拒绝所有请求", kv.sayBasicInfo())
+		reply.Err = ErrRefusingSinceConfiguring
+		kv.mu.Unlock()
+		return
+	} else {
+		DPrintf(11, "%v: 通过该请求", kv.sayBasicInfo())
+	}
+	// 确保自己掌管了这个分片
+	shardId := key2shard(args.Key)
+	if kv.Config.Shards[shardId] != kv.gid {
+		reply.Err = ErrWrongGroup
+		kv.mu.Unlock()
+		return
+	}
+	kv.mu.Unlock()
+	// 封装Op传到下层start
+	op := Op{OpType: args.Op, Key: args.Key, Value: args.Value, SeqId: args.SeqId, ClientId: args.ClientId}
+	//fmt.Printf("[ ----Server[%v]----] : is sending a %v,op is :%+v \n", kv.me, args.Op, op)
+	lastIndex, _, _ := kv.rf.Start(op)
+	op.Index = lastIndex
+
+	DPrintf(11111, "lastIndex为%d的命令:%v", lastIndex, op)
+
+	ch := kv.getWaitCh(lastIndex)
+	//defer func() {
+	//	kv.mu.Lock()
+	//	delete(kv.waitChMap, op.Index)
+	//	kv.mu.Unlock()
+	//}()
+
+	defer kv.unregisterTask(op.Index)
+
+	// 设置超时ticker
+	timer := time.NewTicker(100 * time.Millisecond)
+	select {
+	case replyOp := <-ch:
+		//fmt.Printf("[ ----Server[%v]----] : receive a %vAsk :%+v,Op:%+v\n", kv.me, args.Op, args, replyOp)
+		// 通过clientId、seqId确定唯一操作序列
+		if op.ClientId != replyOp.ClientId || op.SeqId != replyOp.SeqId {
+			reply.Err = ErrWrongLeader
+			DPrintf(11111, "")
+
+		} else {
+			reply.Err = OK
+		}
+
+	case <-timer.C:
+		reply.Err = ErrWrongLeader
+		DPrintf(11111, "已超时")
+
+	}
+	defer timer.Stop()
 }
 
 // the tester calls Kill() when a ShardKV instance won't
@@ -606,9 +510,7 @@ func (kv *ShardKV) startCommand(command Op, timeoutPeriod time.Duration) Err {
 	}
 	command.Index = index
 	DPrintf(111, "%v: 操作类型是%v", kv.sayBasicInfo(), command.OpType)
-	kv.mu.Lock()
 	ch := kv.getWaitCh(index)
-	kv.mu.Unlock()
 	defer kv.unregisterTask(command.Index)
 
 	timer := time.NewTicker(timeoutPeriod)
@@ -629,9 +531,7 @@ func (kv *ShardKV) startCommand(command Op, timeoutPeriod time.Duration) Err {
 		//re.Err = OK
 		//command.Err = re.Err
 		DPrintf(111, "%v:成功执行了%v操作", kv.sayBasicInfo(), command.OpType)
-		//return OK
-		return re.Err
-
+		return OK
 	case <-timer.C:
 		//command.Err = ErrTimeout
 		DPrintf(111, "%v:%v操作超时", kv.sayBasicInfo(), command.OpType)

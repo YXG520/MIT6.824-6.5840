@@ -83,3 +83,7 @@ func (ps *Persister) SaveStateAndSnapshot(state []byte, snapshot []byte) {
 	ps.raftstate = clone(state)
 	ps.snapshot = clone(snapshot)
 }
+
+func (rf *Raft) GetRaftStateSize() int {
+	return rf.persister.RaftStateSize()
+}

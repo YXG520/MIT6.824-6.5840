@@ -22,7 +22,6 @@ const (
 	ErrStaleConfig   = "ErrStaleConfig"
 	ErrTimeout       = "ErrTimeout"
 	ConfigNotArrived = "ConfigNotArrived"
-	ShardNotArrived  = "ShardNotArrived"
 )
 
 const (
@@ -39,11 +38,11 @@ const (
 const (
 	UpConfigLoopInterval = 100 * time.Millisecond // poll configuration period
 
-	GetTimeout          = 100 * time.Millisecond
+	GetTimeout          = 500 * time.Millisecond
 	AppOrPutTimeout     = 500 * time.Millisecond
 	UpConfigTimeout     = 500 * time.Millisecond
 	AddShardsTimeout    = 500 * time.Millisecond
-	RemoveShardsTimeout = 500 * time.Millisecond
+	RemoveShardsTimeout = 1000 * time.Millisecond
 )
 
 type Err string

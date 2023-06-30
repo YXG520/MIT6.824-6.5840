@@ -277,6 +277,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	return index, term, isLeader
 }
+func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
+
+	// Your code here (2D).
+
+	return true
+}
 
 // the tester doesn't halt goroutines created by Raft after each test,
 // but it does call the Kill() method. your code can use killed() to

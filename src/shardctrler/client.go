@@ -70,8 +70,8 @@ func (ck *Clerk) Query(num int) Config {
 // few shards as possible to achieve that goal. The shardctrler should allow re-use of a GID if it's not part of the current
 // configuration (i.e. a GID should be allowed to Join, then Leave, then Join again).
 func (ck *Clerk) Join(servers map[int][]string) {
-	ck.mu.Lock()
-	defer ck.mu.Unlock()
+	//ck.mu.Lock()
+	//defer ck.mu.Unlock()
 
 	ck.seqId++
 	args := &JoinArgs{}

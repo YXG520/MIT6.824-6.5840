@@ -1,4 +1,4 @@
-package shardkv_old
+package shardkv
 
 import "MIT6.824-6.5840/porcupine"
 import "MIT6.824-6.5840/models"
@@ -15,8 +15,11 @@ const linearizabilityCheckTimeout = 1 * time.Second
 
 func check(t *testing.T, ck *Clerk, key string, value string) {
 	v := ck.Get(key)
+
 	if v != value {
 		t.Fatalf("Get(%v): expected:\n%v\nreceived:\n%v", key, value, v)
+	} else {
+		DPrintf(111, "通过GET请求，检查%v成功", key)
 	}
 }
 
@@ -24,13 +27,17 @@ func check(t *testing.T, ck *Clerk, key string, value string) {
 func TestStaticShards(t *testing.T) {
 	fmt.Printf("Test: static shards ...\n")
 
+	// 制作三个复制组和一个配置中心
 	cfg := make_config(t, 3, false, -1)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient()
-
+	DPrintf(111, "制作tester客户端完成...")
 	cfg.join(0)
+	DPrintf(111, "join一个复制组...")
+
 	cfg.join(1)
+	DPrintf(111, "join第二个复制组...")
 
 	n := 10
 	ka := make([]string, n)
@@ -38,18 +45,26 @@ func TestStaticShards(t *testing.T) {
 	for i := 0; i < n; i++ {
 		ka[i] = strconv.Itoa(i) // ensure multiple shards
 		va[i] = randstring(20)
+		DPrintf(111, "进行%d th次put操作, Key:%v, value:%v", i, ka[i], va[i])
 		ck.Put(ka[i], va[i])
 	}
+	k2s := make(map[string]string)
+	for i, k := range ka {
+		k2s[k] = strconv.Itoa(key2shard(k)) + "_" + va[i]
+	}
+	DPrintf(111, "所有的key及其对应的分片和值为：%v", k2s)
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
+		//DPrintf(111, "检查这10个键值对是否存在")
 	}
-
+	DPrintf(111, "准备关闭某一个复制组，后续Get操作应该失败")
 	// make sure that the data really is sharded by
 	// shutting down one shard and checking that some
 	// Get()s don't succeed.
 	cfg.ShutdownGroup(1)
+	DPrintf(111, "复制组1下线成功")
 	cfg.checklogs() // forbid snapshots
-
+	DPrintf(111, "快照检查成功")
 	ch := make(chan string)
 	for xi := 0; xi < n; xi++ {
 		ck1 := cfg.makeClient() // only one call allowed per client
@@ -101,46 +116,55 @@ func TestJoinLeave(t *testing.T) {
 	ck := cfg.makeClient()
 
 	cfg.join(0)
+	//DPrintf(111, "join第一个新的复制组")
+	DPrintf(111, "第一个复制组gi:%d, gid: %v join成功，此时最新的配置为:%v, 准备检测数据", 0, cfg.groups[1].gid, cfg.mck.Query(-1))
 
 	n := 10
 	ka := make([]string, n)
 	va := make([]string, n)
+	DPrintf(111, "准备put10个数据")
 	for i := 0; i < n; i++ {
 		ka[i] = strconv.Itoa(i) // ensure multiple shards
 		va[i] = randstring(5)
 		ck.Put(ka[i], va[i])
 	}
+	k2s := make(map[string]string)
+	for i, k := range ka {
+		k2s[k] = strconv.Itoa(key2shard(k)) + "_" + va[i]
+	}
+	DPrintf(111, "所有的key及其对应的分片和值为：%v", k2s)
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
-
+	DPrintf(111, "准备join第二个复制组...")
 	cfg.join(1)
 
+	DPrintf(111, "新的复制组gi:%d, gid: %d join成功，此时最新的配置为:%v, 准备检测数据", 1, cfg.groups[1].gid, cfg.mck.Query(-1))
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 		x := randstring(5)
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
-
+	DPrintf(111, "加入一个新的复制组后，检查成功")
 	cfg.leave(0)
-
+	DPrintf(111, "成功leave掉一个复制组0,代表gid为%d,并打算进行append操作", cfg.groups[0].gid)
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 		x := randstring(5)
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
-
 	// allow time for shards to transfer.
 	time.Sleep(1 * time.Second)
 
 	cfg.checklogs()
 	cfg.ShutdownGroup(0)
-
+	DPrintf(111, "已经关闭掉复制组0,代表gid为%d,准备检测", cfg.groups[0].gid)
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
+	DPrintf(111, "关闭掉复制组0后，检测数据正确")
 
 	fmt.Printf("  ... Passed\n")
 }

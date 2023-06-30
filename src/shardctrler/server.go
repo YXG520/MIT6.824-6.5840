@@ -47,11 +47,6 @@ type Op struct {
 	Err Err // 操作op发生的错误
 }
 
-func (sc *ShardCtrler) UnregisterTask(index int) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	delete(sc.waitChMap, index)
-}
 func (sc *ShardCtrler) ifDuplicate(clientId int64, seqId int) bool {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
