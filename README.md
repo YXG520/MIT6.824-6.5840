@@ -14,24 +14,24 @@
 lab的内容，看的懵懵懂懂，借鉴了但是有很多bug。
 仓库结构：
 
-![img.png](../images/img.png)
+![img.png](images/img.png)
 ## 1.2 使用说明：
 一般想要保证程序不出现bug，每一个part的测试次数至少1000+，我做到了1000次0bug，
 然后使用每一个文件下的dstest脚本进行测试即可，里面有使用规则。
-![img_4.png](../images/img_4.png)
+![img_4.png](images/img_4.png)
 
 ## 1.3 md文档分布
 下面是各个分支的md文档局部截图：
 
 Lab2A分支截图
-![img_1.png](../images/img_1.png)
+![img_1.png](images/img_1.png)
 
 Lab2B分支截图
-![img_2.png](../images/img_2.png)
+![img_2.png](images/img_2.png)
 ...
 
 Lab4B分支截图
-![img_3.png](../images/img_3.png)
+![img_3.png](images/img_3.png)
 
 ## 1.4 相关资源
 1. MIT 6.824 课程视频：[MIT6.824分布式系统](https://www.bilibili.com/video/BV1qk4y197bB/?spm_id_from=333.337.search-card.all.click)
