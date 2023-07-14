@@ -27,10 +27,10 @@ Lab4A需要实现的就是其中的配置服务部分，也可以称为shard con
 
 ## 1.2 讲一下”一个配置服务和一组复制组“这种架构的各个角色的作用
 
-![img.png](images/img.png)
+![img.png](images/img_33.png)
 
 ## 1.3 在“一个配置服务和一组复制组”架构下，读写请求如何打给复制组的？
-![img_1.png](images/img_1.png)
+![img_1.png](images/img_34.png)
 
 在Lab3的introduction中也规定了我们必须得实现控制器的几个接口，
 其中有一个Query接口，用于客户端查询相关键的配置信息，包括这个键值对存储在
@@ -38,11 +38,11 @@ Lab4A需要实现的就是其中的配置服务部分，也可以称为shard con
 所在复制组的信息以供其将读写请求打到具体的复制组
 
 ## 1.4 在“一个配置服务和一组复制组”架构下，客户端的读写请求需要两次访问
-![img_2.png](images/img_2.png)
+![img_2.png](images/img_35.png)
 
 ## 1.5 这种架构的其他应用
 
-![img_3.png](images/img_3.png)
+![img_3.png](images/img_36.png)
 
 
 # 2 Lab4B任务分解
@@ -63,7 +63,7 @@ Lab4A需要实现的就是其中的配置服务部分，也可以称为shard con
 > 方法注释上说用于和配置中心交互使用，但是具体会涉及到哪些操作呢？难道是会调用join，leave等方法将自己主动从配置中心
 > 移除或者加入？
 
-![img_1.png](img_1.png)
+![img_1.png](images/img_1.png)
 
 ## 2.3.3 ctrlers []*labrpc.ClientEnd
 这个参数表示可以向配置中心的所有节点发送消息的端口，通过这个可以调用配置中心的Query方法，从而获取最新的配置，
@@ -90,32 +90,32 @@ ctrlers []*labrpc.ClientEnd参数也是给特定机器发送rpc的，为什么�
 
 ## 2.5 客户端是怎么知道配置中心发生了变化没有
 
-![img_2.png](img_2.png)
+![img_2.png](images/img_2.png)
 
-![img_3.png](img_3.png)
+![img_3.png](images/img_3.png)
 
 我的方案：其实从common.go文件中的ErrWrongGroup就可以看出老师也推荐这种方案
-![img_4.png](img_4.png)
+![img_4.png](images/img_4.png)
 
 ## 2.6 当某一个复制组中的大多数节点下线时，如何处理？
 > 这个复制组不能对外提供KV服务，但是不影响其他复制组的正常工作，也就是说存在一部分打到这个异常的复制组的请求
 > 会被拒绝掉
 
 ## 2.7 如果各个复制组采用轮询的方式检查最新的配置有没有发生变化，只有leader才能轮询嘛
-![img_5.png](img_5.png)
+![img_5.png](images/img_5.png)
 
 ## 2.8 shardKV服务端怎么知道控制中心的配置是否发生变更，如果它每次获取的配置都是一样的呢
-![img_6.png](img_6.png)
+![img_6.png](images/img_6.png)
 
 ## 2.9 分片迁移相关的策略
 1 当复制组决定迁移分片的时候，是不是得遍历数据库中的所有值，并且计算它们的key所属的分片id，再根据配置查询是否发生变动，如果是就需要迁移？
-![img_7.png](img_7.png)
+![img_7.png](images/img_7.png)
 
 2 你说的分片索引策略，是指使用一个map，key为分片id，value为一个数据库中属于该分片的key值列表嘛
-![img_8.png](img_8.png)
+![img_8.png](images/img_8.png)
 
 3 你给的map中，value是不是也可以是一个set集合，这样的话，增删改查的复杂度为O(1)
-![img_9.png](img_9.png)
+![img_9.png](images/img_9.png)
 
 4 除了携带key，value以及操作类型外，客户端访问复制组时是否需要携带key所属的分片id？
 > 可以携带，因为不影响客户端取得正确数据
@@ -132,29 +132,29 @@ ctrlers []*labrpc.ClientEnd参数也是给特定机器发送rpc的，为什么�
 > 会访问配置中心拿到正确的配置后访问正确的复制组A，然后顺利取得数据
 
 ## 2.10 判断新旧配置时，为什么不推荐比较版本号，哈希值的方法
-![img_10.png](img_10.png)
+![img_10.png](images/img_10.png)
 
-![img_11.png](img_11.png)
+![img_11.png](images/img_11.png)
 ## 2.11 当一个复制组通过轮询知道了配置发生变更并且将一部分分片发送给目标复制组，目标复制组收到分片时的配置是旧的怎么办呢？
-![img_12.png](img_12.png)
+![img_12.png](images/img_12.png)
 
 ## 2.12 你给的代码中如何实现增量迁移
-![img_13.png](img_13.png)
+![img_13.png](images/img_13.png)
 
 ## 2.13 当一个复制组检测配置发生变更时，只想要将其不受自己管理的分片进行迁移，其他的不变，有什么好的实现方案吗?
-![img_14.png](img_14.png)
+![img_14.png](images/img_14.png)
 
 ## 2.14 当一个复制组检测到配置发生变更时，需要迁移完成后才能更新配置嘛
-![img_15.png](img_15.png)
+![img_15.png](images/img_15.png)
 
 ## 2.15 结合你给的关于"当一个复制组通过轮询知道了配置发生变更并且将一部分分片发送给目标复制组，目标复制组收到分片时的配置是旧的怎么办呢？"的答案，目标复制组收到一个版本号比自己大的迁移分片到自己的请求时也需要向配置中心拉取最新配置并且也需要发送切换到别的复制组，这有没有可能产生死锁呢
-![img_16.png](img_16.png)
+![img_16.png](images/img_16.png)
 
 ## 2.16 当源复制组向目标复制组发送迁移分片请求的时候，是不是也要去重？
-![img_17.png](img_17.png)
+![img_17.png](images/img_17.png)
 
 ## 2.17 leader节点发送分片数据给其他节点的过程应该不需要下放到raft节点对吧
-![img_18.png](img_18.png)
+![img_18.png](images/img_18.png)
 
 ## 2.18 在leader下放分片成功的结果到上层状态机执行切换配置成功的这段时间，客户端的请求打过来了呢？
 
@@ -217,7 +217,7 @@ func (kv *ShardKV) sendShards2TargetGroup(op Op, data map[string]string, targetR
 ### 2 如果一个复制组要离开系统，是先更新配置还是先下线复制组？
 
 ### 3 刚开始各个复制组从配置中心的配置是初始化的空配置，此时配置一致，但是随后配置中心生成了一个新的配置后，各复制组如何处理？
-![img_19.png](img_19.png)
+![img_19.png](images/img_19.png)
 
 ### 4 复制组中的数据为空的时候，此时又探测到新配置，如何确定是否发送分片呢？
 
@@ -232,12 +232,12 @@ func (kv *ShardKV) sendShards2TargetGroup(op Op, data map[string]string, targetR
 
 ### 7 如果复制组在配置中心都leave掉了，新配置中所有分片指向的gid变成了0，这个corner case如何处理?
 这可能是表示发生了错误
-![img_21.png](img_21.png)
+![img_21.png](images/img_21.png)
 ### 8 有没有可能在配置中心更新初始配置（初始配置指分片的gid指向0）之前就有客户端的读写请求打到某一个复制组A呢？
 > 不可能，因为客户端也需要先查询配置中心拿到具体的复制组gid，发现gid为0时则必然不可能打到编号非0的复制组
 
 ### 9 配置中心是否能保证给每个分片都规定一个管理它的复制组？
-![img_20.png](img_20.png)
+![img_20.png](images/img_20.png)
 
 ## 2.21 为什么这里的客户端的Get和Put请求在收到ErrWrongGroup,ErrWrongLeader错误时不自增seqId，而是复用原来的继续请求？
 > 有两个好处：（1）复用原来的id可以避免seqId过快消耗完（2）从语义的角度看，seqId表示一次操作（put/append/get）而不是一个rpc请求，
@@ -246,7 +246,7 @@ func (kv *ShardKV) sendShards2TargetGroup(op Op, data map[string]string, targetR
 > seqMap（去重复请求的map，保存了客户端完成的最后一次操作的序列号）在移动分片的时候也需要移动给目标复制组！
 
 下面这张图讲解了为什么http请求的requestId为什么一直递增，在哪种情况下可以复用
-![img_22.png](img_22.png)
+![img_22.png](images/img_22.png)
 下面是问题涉及到的代码段
 ```go
 
@@ -298,14 +298,14 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 }
 ```
 举一个因为没有迁移seqMap而导致不一致的例子
-![img_25.png](img_25.png)
+![img_25.png](images/img_25.png)
 ## 2.22 迁移出去的旧数据不删除对请求有干扰嘛？为什么可以不用立即删除迁移完成的key，
 > 迁移出去的旧数据即使不删除也不会对请求有干扰，因为配置应用成功后，请求被打到这个复制组会被拒绝
 
-![img_23.png](img_23.png)
+![img_23.png](images/img_23.png)
 
 ## 2.23 如果是按照切片发送rpc，则 如果给予切片成功，或者时间超时，这两种情况都需要进行GC掉不属于自己的切片， 为什么超时了也可以GC掉不属于自己的切片
-![ig_24.png](img_24.png)
+![ig_24.png](images/img_24.png)
 ## 2.24 为什么要给每一个分片设置一个版本号？
 > 答：因为分片分片数据的清理有滞后性，为了不让旧数据影响到分片迁移过程，需要设置一个版本号。
 因为下面这段代码会用到，比如当一个分片里的数据起初在A，config版本号是1，然后被迁移到了复制组B，但是组A的这个分片
@@ -319,10 +319,10 @@ if gid == kv.gid && cfg.Shards[shardId] != kv.gid && kv.shardPersist[shardId].Co
 }
 ```
 ## 2.25 配置发生更改时 分片为空应该发送嘛？
-![img_26.png](img_26.png)
+![img_26.png](images/img_26.png)
 
 ## 2.26 配置不能跳着应用是嘛
-![img_27.png](img_27.png)
+![img_27.png](images/img_27.png)
 
 ## 2.27 发送分片时的细节
 
@@ -337,13 +337,13 @@ if gid == kv.gid && cfg.Shards[shardId] != kv.gid && kv.shardPersist[shardId].Co
 
 ### 2.27.3 如果发生配置变更时，分片全部发送且接收完毕，则此时所有的分片中的配置版本应该都是和新配置的版本号一样
 （gpt4回答的不一定准确！）
-![img_32.png](img_32.png)
+![img_32.png](images/img_32.png)
 
 ## 2.28 如果配置变更频繁呢,在配置版本号为1时组A的分片9被put进了数据，然后在版本2中，这个分片9的数据需要迁往复制组B，此时迁移成功后，分片9的版本号是多少
 
 ## 2.29 如何实现阻塞式的配置变更，即在配置变更期间，所有复制组拒绝用户请求？
 我刚开始只是设置了一个配置变更但是不知道还需要通知所有的复制组，所以就老是出现bug
-![img_28.png](img_28.png)
+![img_28.png](images/img_28.png)
 
 ## 2.30 为什么复制组处理客户端的GET/PUT请求需要做双重校验？
 ### 2.30.1 首先这里的双重校验是哪双重？
@@ -353,13 +353,13 @@ if gid == kv.gid && cfg.Shards[shardId] != kv.gid && kv.shardPersist[shardId].Co
 第二重校验发生在状态机应用GET/PUT请求时会重复一遍第一重校验的动作
 
 ### 2.30.2 只有所有的待发送切片都成功被目标复制组接收，所有的待接收切片到达本地才能切换配置，为什么在Server后端收到GET/PUT请求时就会校验携带的key所在分片是否已经到达本地呢,但是我的配置都已经更换完成了，那不应该说明所有的分片都到达本地并且接受了吗
-![img_29.png](img_29.png)
+![img_29.png](images/img_29.png)
 
 ### 2.30.3 双重校验的作用
-![img_30.png](img_30.png)
+![img_30.png](images/img_30.png)
 
 ### 2.30.4 第一重校验是不是可以去掉？
-![img_31.png](img_31.png)
+![img_31.png](images/img_31.png)
 
 ## 3.1 Lab4a的具体任务？
 
@@ -377,12 +377,12 @@ if gid == kv.gid && cfg.Shards[shardId] != kv.gid && kv.shardPersist[shardId].Co
 
 ## 3.4 结构体Config的num字段解析
 
-![img_4.png](images/img_4.png)
+![img_4.png](images/img_37.png)
 
-![img_5.png](images/img_5.png)
+![img_5.png](images/img_38.png)
 
 ## 3.5 所以一个集群中只有一个是配置是有效的对吗
-![img_6.png](images/img_6.png)
+![img_6.png](images/img_39.png)
 
 ## 3.6 当撤销掉/新增一个复制组后，如何对分片进行负载均衡？
 
