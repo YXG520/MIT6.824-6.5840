@@ -173,7 +173,7 @@ func (cfg *config) ShutdownServer(gi int, i int) {
 	// it's important to do this before creating
 	// the new Persister in saved[i], to avoid
 	// the possibility of the server returning a
-	// positive reply to an Append but persisting
+	// positive reply to an AppendType but persisting
 	// the result in the superseded Persister.
 	cfg.net.DeleteServer(cfg.servername(gg.gid, i))
 

@@ -1,9 +1,5 @@
 package shardkv
 
-import (
-	"time"
-)
-
 //
 // Sharded key/value server.
 // Lots of replica groups, each running Raft.
@@ -14,51 +10,37 @@ import (
 //
 
 const (
-	OK               = "OK"
-	ErrNoKey         = "ErrNoKey"
-	ErrWrongGroup    = "ErrWrongGroup"
-	ErrWrongLeader   = "ErrWrongLeader"
-	ErrDuplicate     = "ErrDuplicate"
-	ErrStaleConfig   = "ErrStaleConfig"
-	ErrTimeout       = "ErrTimeout"
-	ConfigNotArrived = "ConfigNotArrived"
-	ShardNotArrived  = "ShardNotArrived"
+	OK                  Err = "OK"
+	ErrNoKey                = "ErrNoKey"
+	ErrWrongGroup           = "ErrWrongGroup"
+	ErrWrongLeader          = "ErrWrongLeader"
+	ShardNotArrived         = "ShardNotArrived"
+	ConfigNotArrived        = "ConfigNotArrived"
+	ErrInconsistentData     = "ErrInconsistentData"
+	ErrOverTime             = "ErrOverTime"
 )
 
 const (
-	PutOp                       string = "PutOp"
-	AppendOp                           = "AppendOp"
-	GetOp                              = "GetOp"
-	UpdateConfigOp                     = "UpdateConfigOp"
-	HandleReceiveShardsOp              = "HandleReceiveShardsOp"
-	ErrRefusingSinceConfiguring        = "ErrRefusingSinceConfiguring"
-	RemoveShardType                    = "RemoveShardType"
-	ErrInconsistentData                = "ErrInconsistentData"
-	AddShardHandOp                     = "AddShardHandOp"
+	PutType         Operation = "Put"
+	AppendType                = "Append"
+	GetType                   = "Get"
+	UpConfigType              = "UpConfig"
+	AddShardType              = "AddShard"
+	RemoveShardType           = "RemoveShard"
 )
-const (
-	UpConfigLoopInterval = 100 * time.Millisecond // poll configuration period
 
-	GetTimeout          = 100 * time.Millisecond
-	AppOrPutTimeout     = 500 * time.Millisecond
-	UpConfigTimeout     = 500 * time.Millisecond
-	AddShardsTimeout    = 500 * time.Millisecond
-	RemoveShardsTimeout = 500 * time.Millisecond
-)
+type Operation string
 
 type Err string
 
-// Put or Append
+// PutType or AppendType
 type PutAppendArgs struct {
 	// You'll have to add definitions here.
-	Key   string
-	Value string
-	Op    string // "Put" or "Append"
-	// You'll have to add definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-	ClientId int64
-	SeqId    int
+	Key       string
+	Value     string
+	Op        Operation // "Put" or "Append"
+	ClientId  int64
+	RequestId int
 }
 
 type PutAppendReply struct {
@@ -66,10 +48,9 @@ type PutAppendReply struct {
 }
 
 type GetArgs struct {
-	Key string
-	// You'll have to add definitions here.
-	ClientId int64
-	SeqId    int
+	Key       string
+	ClientId  int64
+	RequestId int
 }
 
 type GetReply struct {
@@ -77,13 +58,14 @@ type GetReply struct {
 	Value string
 }
 
-type MoveShardsArgs struct {
-	ClientId  int64
-	SeqId     int
-	SentShard Shard //被发送的分片
-	ShardId   int
-	SeqMap    map[int64]int
+type SendShardArg struct {
+	LastAppliedRequestId map[int64]int // for receiver to update its state
+	ShardId              int
+	Shard                Shard // Shard to be sent
+	ClientId             int64
+	RequestId            int
 }
-type MoveShardsReply struct {
+
+type AddShardReply struct {
 	Err Err
 }

@@ -36,22 +36,21 @@ func nrand() int64 {
 }
 
 type Clerk struct {
-	sm       *shardctrler.Clerk // 配置中心的客户端，供我们调用以获取最新的服务
+	sm       *shardctrler.Clerk
 	config   shardctrler.Config
 	make_end func(string) *labrpc.ClientEnd
 	// You will have to modify this struct.
 	seqId    int
-	clientId int64 // 标识客户端的唯一ID，可以用于跟踪和关联请求。
-
-	//mu sync.Mutex
+	clientId int64
 }
 
+// MakeClerk
 // the tester calls MakeClerk.
 //
 // ctrlers[] is needed to call shardctrler.MakeClerk().
 //
 // make_end(servername) turns a server name from a
-// Config.Groups[gid][i] into a labrpc.ClientEnd on which you can
+// UpConfig.Groups[gid][i] into a labrpc.ClientEnd on which you can
 // send RPCs.
 func MakeClerk(ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
@@ -60,27 +59,24 @@ func MakeClerk(ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.Client
 	// You'll have to add code here.
 	ck.clientId = nrand()
 	ck.seqId = 0
-	// 初始化时就向配置中心获取配置并且更新到本地缓存中
 	ck.config = ck.sm.Query(-1)
-
 	return ck
 }
 
+// Get GetType
 // fetch the current value for a key.
 // returns "" if the key does not exist.
 // keeps trying forever in the face of all other errors.
 // You will have to modify this function.
 func (ck *Clerk) Get(key string) string {
-	args := GetArgs{}
-	args.Key = key
-	//ck.mu.Lock()
-
 	ck.seqId++
-	args.ClientId = ck.clientId
-	args.SeqId = ck.seqId
-	//ck.mu.Unlock()
 
 	for {
+		args := GetArgs{
+			Key:       key,
+			ClientId:  ck.clientId,
+			RequestId: ck.seqId,
+		}
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
 		if servers, ok := ck.config.Groups[gid]; ok {
@@ -88,80 +84,78 @@ func (ck *Clerk) Get(key string) string {
 			for si := 0; si < len(servers); si++ {
 				srv := ck.make_end(servers[si])
 				var reply GetReply
+				//fmt.Printf("[ ++++Client[%v]++++] : send a GetType,args:%+v,serverId[%v]\n", ck.clientId, args, si)
 				ok := srv.Call("ShardKV.Get", &args, &reply)
-				if ok && (reply.Err == OK || reply.Err == ErrNoKey || reply.Err == ErrDuplicate) {
-					DPrintf(111, "从配置组%d中正确的返回了shardId为%d的key对应的value:%v", gid, shard, reply.Value)
+				if ok {
+					//fmt.Printf("[ ++++Client[%v]++++] : receive a GetType,args:%+v ,replys:%+v ,serverId[%v]\n", ck.clientId, args, reply, si)
+
+				} else {
+					//fmt.Printf("[ ++++Client[%v]++++] : Ask Err:args:%+v\n", ck.clientId, args)
+
+				}
+
+				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
 					return reply.Value
 				}
 				if ok && (reply.Err == ErrWrongGroup) {
 					break
 				}
-
 				// ... not ok, or ErrWrongLeader
-				//if ok && (reply.Err == ErrWrongLeader)
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 		// ask controler for the latest configuration.
-		//ck.mu.Lock()
-		ck.config = ck.sm.Query(-1) // 典型的懒加载或者按需加载
-		//ck.mu.Unlock()
+		ck.config = ck.sm.Query(-1)
 	}
 
-	return ""
 }
 
+// PutAppend
 // shared by Put and Append.
 // You will have to modify this function.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
-	args := PutAppendArgs{}
-	args.Key = key
-	args.Value = value
-	args.Op = op
-	//ck.mu.Lock()
 	ck.seqId++
-	args.ClientId = ck.clientId
-	args.SeqId = ck.seqId
-	//ck.mu.Unlock()
 
 	for {
+		args := PutAppendArgs{
+			Key:       key,
+			Value:     value,
+			Op:        Operation(op),
+			ClientId:  ck.clientId,
+			RequestId: ck.seqId,
+		}
 		shard := key2shard(key)
-		//args.shardId = shard
-		//ck.mu.Lock()
-
 		gid := ck.config.Shards[shard]
-		//ck.mu.Unlock()
 		if servers, ok := ck.config.Groups[gid]; ok {
-			//ck.mu.Unlock()
 			for si := 0; si < len(servers); si++ {
 				srv := ck.make_end(servers[si])
 				var reply PutAppendReply
+				//fmt.Printf("[ ++++Client[%v]++++] : send a Put,args:%+v,serverId[%v]\n", ck.clientId, args, si)
 				ok := srv.Call("ShardKV.PutAppend", &args, &reply)
-				if ok && (reply.Err == OK || reply.Err == ErrNoKey || reply.Err == ErrDuplicate) {
-					//DPrintf(111, "成功PutAppend， reply.Err：%v", reply.Err)
-					DPrintf(111, "从复制组%d中正确的put/append(%v)了shardId为%d的key, 其对应的value:%v", gid, args.Op, shard, args.Value)
-
-					return
-				} else if ok && reply.Err == ErrWrongGroup {
-					break
+				if ok {
+					//fmt.Printf("[ ++++Client[%v]++++] : receive a Put,args:%+v ,replys:%+v ,serverId[%v]\n", ck.clientId, args, reply, si)
 				} else {
-					//DPrintf(111, "err wrong leader")
+					//fmt.Printf("[ ++++Client[%v]++++] : Ask Err:args:%+v\n", ck.clientId, args)
+				}
+				if ok && reply.Err == OK {
+					return
+				}
+				if ok && reply.Err == ErrWrongGroup {
+					break
 				}
 				// ... not ok, or ErrWrongLeader
 			}
 		}
-		time.Sleep(130 * time.Millisecond)
-		// ask controler for the latest configuration.
-		//ck.mu.Lock()
-		ck.config = ck.sm.Query(-1)
-		//ck.mu.Unlock()
 
+		time.Sleep(100 * time.Millisecond)
+		// ask controler for the latest configuration.
+		ck.config = ck.sm.Query(-1)
 	}
 }
 
 func (ck *Clerk) Put(key string, value string) {
-	ck.PutAppend(key, value, PutOp)
+	ck.PutAppend(key, value, "Put")
 }
 func (ck *Clerk) Append(key string, value string) {
-	ck.PutAppend(key, value, AppendOp)
+	ck.PutAppend(key, value, "Append")
 }
