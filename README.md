@@ -60,11 +60,11 @@ Lab2D:10天
 
 Lab3A:5天
 
-Lab2B:7天
+Lab3B:7天
 
-Lab2C:5天
+Lab4A:5天
 
-Lab2D:10天
+Lab4B:10天
 # 2 声明
 这个项目我是打算用作校招项目的，所以精耕细作，得益于GPT4的强大，很多不懂得地方通过gpt4给出的全面分析也被我弄透，
 大家可以参考我的一篇关于raft面试题的总结博客：[口撕raft面试100问](https://blog.csdn.net/yxg520s/article/details/130977890?spm=1001.2014.3001.5502)
